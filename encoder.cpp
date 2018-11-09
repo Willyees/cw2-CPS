@@ -19,8 +19,14 @@
 // Note: jpge.cpp/h and jpgd.cpp/h are completely standalone, i.e. they do not have any dependencies to each other.
 #include "jpge.h"
 #include "jpgd.h"
-#include "stb_image.c"
+#include "stb_image.h"
 #include <ctype.h>
+#include <math.h>
+#include <memory.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <stdarg.h>
+#include <string>
 
 #if defined(_MSC_VER)
 #define strcasecmp _stricmp
@@ -58,7 +64,7 @@ static void log_printf(const char *pMsg, ...)
 {
     va_list args;
 
-    va_start(args, pMsg);
+	va_start(args, pMsg);
     char buf[2048];
     vsnprintf(buf, sizeof(buf) - 1, pMsg, args);
     buf[sizeof(buf) - 1] = '\0';
