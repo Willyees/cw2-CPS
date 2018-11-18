@@ -27,6 +27,9 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <string>
+#include <chrono>
+#include <fstream>
+#include <iostream>
 
 #if defined(_MSC_VER)
 #define strcasecmp _stricmp
@@ -267,169 +270,188 @@ failure:
 
 int main(int arg_c, char *ppArgs[])
 {
-    printf("jpge/jpgd example app\n");
+	//clean time file
+	std::ofstream file("times.csv", std::ios_base::out);
+	file.clear();
+	file.close();
+	for (int i = 0; i < 10; ++i) {
+		auto start = std::chrono::system_clock::now();
+		printf("jpge/jpgd example app\n");
 
-    // Parse command line.
-    bool run_exhausive_test = false;
-    bool test_memory_compression = false;
-    int subsampling = -1;
-    bool use_jpgd = true;
+		// Parse command line.
+		bool run_exhausive_test = false;
+		bool test_memory_compression = false;
+		int subsampling = -1;
+		bool use_jpgd = true;
 
-    int arg_index = 1;
-    while ((arg_index < arg_c) && (ppArgs[arg_index][0] == '-')) {
-        switch (tolower(ppArgs[arg_index][1])) {
-        case 'g':
-            strcpy_s(s_log_filename, sizeof(s_log_filename), &ppArgs[arg_index][2]);
-            break;
-        case 'x':
-            run_exhausive_test = true;
-            break;
-        case 'm':
-            test_memory_compression = true;
-            break;
-        case 'o': // dropped option
-            break;
-        case 'l':
-            if (strcasecmp(&ppArgs[arg_index][1], "luma") == 0) {
-                subsampling = jpge::Y_ONLY;
-            } else {
-                log_printf("Unrecognized option: %s\n", ppArgs[arg_index]);
-                return EXIT_FAILURE;
-            }
-            break;
-        case 'h':
-            if (strcasecmp(&ppArgs[arg_index][1], "h1v1") == 0) {
-                subsampling = jpge::H1V1;
-            } else if (strcasecmp(&ppArgs[arg_index][1], "h2v1") == 0) {
-                subsampling = jpge::H2V1;
-            } else if (strcasecmp(&ppArgs[arg_index][1], "h2v2") == 0) {
-                subsampling = jpge::H2V2;
-            } else {
-                log_printf("Unrecognized subsampling: %s\n", ppArgs[arg_index]);
-                return EXIT_FAILURE;
-            }
-            break;
-        case 's': {
-            use_jpgd = false;
-            break;
-        }
-        default:
-            log_printf("Unrecognized option: %s\n", ppArgs[arg_index]);
-            return EXIT_FAILURE;
-        }
-        arg_index++;
-    }
+		int arg_index = 1;
+		while ((arg_index < arg_c) && (ppArgs[arg_index][0] == '-')) {
+			switch (tolower(ppArgs[arg_index][1])) {
+			case 'g':
+				strcpy_s(s_log_filename, sizeof(s_log_filename), &ppArgs[arg_index][2]);
+				break;
+			case 'x':
+				run_exhausive_test = true;
+				break;
+			case 'm':
+				test_memory_compression = true;
+				break;
+			case 'o': // dropped option
+				break;
+			case 'l':
+				if (strcasecmp(&ppArgs[arg_index][1], "luma") == 0) {
+					subsampling = jpge::Y_ONLY;
+				}
+				else {
+					log_printf("Unrecognized option: %s\n", ppArgs[arg_index]);
+					return EXIT_FAILURE;
+				}
+				break;
+			case 'h':
+				if (strcasecmp(&ppArgs[arg_index][1], "h1v1") == 0) {
+					subsampling = jpge::H1V1;
+				}
+				else if (strcasecmp(&ppArgs[arg_index][1], "h2v1") == 0) {
+					subsampling = jpge::H2V1;
+				}
+				else if (strcasecmp(&ppArgs[arg_index][1], "h2v2") == 0) {
+					subsampling = jpge::H2V2;
+				}
+				else {
+					log_printf("Unrecognized subsampling: %s\n", ppArgs[arg_index]);
+					return EXIT_FAILURE;
+				}
+				break;
+			case 's': {
+				use_jpgd = false;
+				break;
+			}
+			default:
+				log_printf("Unrecognized option: %s\n", ppArgs[arg_index]);
+				return EXIT_FAILURE;
+			}
+			arg_index++;
+		}
 
-    if (run_exhausive_test) {
-        if ((arg_c - arg_index) < 1) {
-            log_printf("Not enough parameters (expected source file)\n");
-            return print_usage();
-        }
+		if (run_exhausive_test) {
+			if ((arg_c - arg_index) < 1) {
+				log_printf("Not enough parameters (expected source file)\n");
+				return print_usage();
+			}
 
-        const char *pSrc_filename = ppArgs[arg_index++];
-        return exhausive_compression_test(pSrc_filename, use_jpgd);
-    }
+			const char *pSrc_filename = ppArgs[arg_index++];
+			return exhausive_compression_test(pSrc_filename, use_jpgd);
+		}
 
-    // Test jpge
-    if ((arg_c - arg_index) < 3) {
-        log_printf("Not enough parameters (expected source file, dest file, quality factor to follow options)\n");
-        return print_usage();
-    }
+		// Test jpge
+		if ((arg_c - arg_index) < 3) {
+			log_printf("Not enough parameters (expected source file, dest file, quality factor to follow options)\n");
+			return print_usage();
+		}
 
-    const char *pSrc_filename = ppArgs[arg_index++];
-    const char *pDst_filename = ppArgs[arg_index++];
+		const char *pSrc_filename = ppArgs[arg_index++];
+		const char *pDst_filename = ppArgs[arg_index++];
 
-    float quality_factor = atof(ppArgs[arg_index++]);
-    if ((quality_factor < 1) || (quality_factor > 100)) {
-        log_printf("Quality factor must range from 1-100!\n");
-        return EXIT_FAILURE;
-    }
+		float quality_factor = atof(ppArgs[arg_index++]);
+		if ((quality_factor < 1) || (quality_factor > 100)) {
+			log_printf("Quality factor must range from 1-100!\n");
+			return EXIT_FAILURE;
+		}
 
-    // Load the source image.
-    const int req_comps = 3; // request RGB image
-    int width = 0, height = 0, actual_comps = 0;
-    uint8 *pImage_data = stbi_load(pSrc_filename, &width, &height, &actual_comps, req_comps);
-    if (!pImage_data) {
-        log_printf("Failed loading file \"%s\"!\n", pSrc_filename);
-        return EXIT_FAILURE;
-    }
+		// Load the source image.
+		const int req_comps = 3; // request RGB image
+		int width = 0, height = 0, actual_comps = 0;
+		uint8 *pImage_data = stbi_load(pSrc_filename, &width, &height, &actual_comps, req_comps);
+		if (!pImage_data) {
+			log_printf("Failed loading file \"%s\"!\n", pSrc_filename);
+			return EXIT_FAILURE;
+		}
 
-    log_printf("Source file: \"%s\", image resolution: %ix%i, actual comps: %i\n", pSrc_filename, width, height, actual_comps);
+		log_printf("Source file: \"%s\", image resolution: %ix%i, actual comps: %i\n", pSrc_filename, width, height, actual_comps);
 
-    // Fill in the compression parameter structure.
-    jpge::params params;
-    params.m_quality = quality_factor;
-    params.m_subsampling = (subsampling < 0) ? ((actual_comps == 1) ? jpge::Y_ONLY : jpge::H2V2) : static_cast<jpge::subsampling_t>(subsampling);
+		// Fill in the compression parameter structure.
+		jpge::params params;
+		params.m_quality = quality_factor;
+		params.m_subsampling = (subsampling < 0) ? ((actual_comps == 1) ? jpge::Y_ONLY : jpge::H2V2) : static_cast<jpge::subsampling_t>(subsampling);
 
-    // Now create the JPEG file.
-    if (test_memory_compression) {
-        int buf_size = width * height * 3; // allocate a buffer that's hopefully big enough (this is way overkill for jpeg)
-        if (buf_size < 1024) {
-            buf_size = 1024;
-        }
-        void *pBuf = malloc(buf_size);
+		// Now create the JPEG file.
+		if (test_memory_compression) {
+			int buf_size = width * height * 3; // allocate a buffer that's hopefully big enough (this is way overkill for jpeg)
+			if (buf_size < 1024) {
+				buf_size = 1024;
+			}
+			void *pBuf = malloc(buf_size);
 
-        if (!jpge::compress_image_to_jpeg_file_in_memory(pBuf, buf_size, width, height, req_comps, pImage_data, params)) {
-            log_printf("Failed creating JPEG data!\n");
-            return EXIT_FAILURE;
-        }
+			if (!jpge::compress_image_to_jpeg_file_in_memory(pBuf, buf_size, width, height, req_comps, pImage_data, params)) {
+				log_printf("Failed creating JPEG data!\n");
+				return EXIT_FAILURE;
+			}
 
-        FILE *pFile = fopen(pDst_filename, "wb");
-        if (!pFile) {
-            log_printf("Failed creating file \"%s\"!\n", pDst_filename);
-            return EXIT_FAILURE;
-        }
+			FILE *pFile = fopen(pDst_filename, "wb");
+			if (!pFile) {
+				log_printf("Failed creating file \"%s\"!\n", pDst_filename);
+				return EXIT_FAILURE;
+			}
 
-        if (fwrite(pBuf, buf_size, 1, pFile) != 1) {
-            log_printf("Failed writing to output file!\n");
-            return EXIT_FAILURE;
-        }
+			if (fwrite(pBuf, buf_size, 1, pFile) != 1) {
+				log_printf("Failed writing to output file!\n");
+				return EXIT_FAILURE;
+			}
 
-        if (fclose(pFile) == EOF) {
-            log_printf("Failed writing to output file!\n");
-            return EXIT_FAILURE;
-        }
-    } else {
+			if (fclose(pFile) == EOF) {
+				log_printf("Failed writing to output file!\n");
+				return EXIT_FAILURE;
+			}
+		}
+		else {
 
-        if (!jpge::compress_image_to_jpeg_file(pDst_filename, width, height, req_comps, pImage_data, params)) {
-            log_printf("Failed writing to output file!\n");
-            return EXIT_FAILURE;
-        }
-    }
+			if (!jpge::compress_image_to_jpeg_file(pDst_filename, width, height, req_comps, pImage_data, params)) {
+				log_printf("Failed writing to output file!\n");
+				return EXIT_FAILURE;
+			}
+		}
+		auto end = std::chrono::system_clock::now();
+		auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+		log_printf("Total time: %f\n", result_time);
+		std::ofstream times_f("times.csv", std::ios_base::app);
+		times_f << result_time << std::endl;
+		const long comp_file_size = get_file_size(pDst_filename);
+		const uint total_pixels = width * height;
+		log_printf("Compressed file size: %u, bits/pixel: %3.3f\n", comp_file_size, (comp_file_size * 8.0f) / total_pixels);
 
-    const long comp_file_size = get_file_size(pDst_filename);
-    const uint total_pixels = width * height;
-    log_printf("Compressed file size: %u, bits/pixel: %3.3f\n", comp_file_size, (comp_file_size * 8.0f) / total_pixels);
+		// Now try loading the JPEG file using jpgd or stbi_image's JPEG decompressor.
+		int uncomp_width = 0, uncomp_height = 0, uncomp_actual_comps = 0, uncomp_req_comps = 3;
 
-    // Now try loading the JPEG file using jpgd or stbi_image's JPEG decompressor.
-    int uncomp_width = 0, uncomp_height = 0, uncomp_actual_comps = 0, uncomp_req_comps = 3;
+		uint8 *pUncomp_image_data;
+		if (use_jpgd) {
+			pUncomp_image_data = jpgd::decompress_jpeg_image_from_file(pDst_filename, &uncomp_width, &uncomp_height, &uncomp_actual_comps, uncomp_req_comps);
+		}
+		else {
+			pUncomp_image_data = stbi_load(pDst_filename, &uncomp_width, &uncomp_height, &uncomp_actual_comps, uncomp_req_comps);
+		}
 
-    uint8 *pUncomp_image_data;
-    if (use_jpgd) {
-        pUncomp_image_data = jpgd::decompress_jpeg_image_from_file(pDst_filename, &uncomp_width, &uncomp_height, &uncomp_actual_comps, uncomp_req_comps);
-    } else {
-        pUncomp_image_data = stbi_load(pDst_filename, &uncomp_width, &uncomp_height, &uncomp_actual_comps, uncomp_req_comps);
-    }
+		if (!pUncomp_image_data) {
+			log_printf("Failed loading compressed image file \"%s\"!\n", pDst_filename);
+			return EXIT_FAILURE;
+		}
 
-    if (!pUncomp_image_data) {
-        log_printf("Failed loading compressed image file \"%s\"!\n", pDst_filename);
-        return EXIT_FAILURE;
-    }
+		if ((uncomp_width != width) || (uncomp_height != height)) {
+			log_printf("Loaded JPEG file has a different resolution than the original file!\n");
+			return EXIT_FAILURE;
+		}
 
-    if ((uncomp_width != width) || (uncomp_height != height)) {
-        log_printf("Loaded JPEG file has a different resolution than the original file!\n");
-        return EXIT_FAILURE;
-    }
+		// Diff the original and compressed images.
+		image_compare_results results;
+		image_compare(results, width, height, pImage_data, req_comps, pUncomp_image_data, uncomp_req_comps, (params.m_subsampling == jpge::Y_ONLY) || (actual_comps == 1) || (uncomp_actual_comps == 1));
+		log_printf("Error Max: %f, Mean: %f, Mean^2: %f, RMSE: %f, PSNR: %f\n", results.max_err, results.mean, results.mean_squared, results.root_mean_squared, results.peak_snr);
 
-    // Diff the original and compressed images.
-    image_compare_results results;
-    image_compare(results, width, height, pImage_data, req_comps, pUncomp_image_data, uncomp_req_comps, (params.m_subsampling == jpge::Y_ONLY) || (actual_comps == 1) || (uncomp_actual_comps == 1));
-    log_printf("Error Max: %f, Mean: %f, Mean^2: %f, RMSE: %f, PSNR: %f\n", results.max_err, results.mean, results.mean_squared, results.root_mean_squared, results.peak_snr);
-
-    if (results.root_mean_squared > 40) {
-        return EXIT_FAILURE;
-    }
-    log_printf("Success.\n");
-
+		if (results.root_mean_squared > 40) {
+			return EXIT_FAILURE;
+		}
+		log_printf("Success.\n");
+		times_f.close();
+	}
+	
+	
     return EXIT_SUCCESS;
 }
