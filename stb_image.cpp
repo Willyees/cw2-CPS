@@ -80,6 +80,9 @@
 #include <memory.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <iostream>
+#include <omp.h>
+
 
 #ifndef _MSC_VER
    #ifdef __cplusplus
@@ -1866,30 +1869,37 @@ static int dist_extra[32] =
 
 static int parse_huffman_block(zbuf *a)
 {
-   for(;;) {
-      int z = zhuffman_decode(a, &a->z_length);
-      if (z < 256) {
-         if (z < 0) return e("bad huffman code","Corrupt PNG"); // error in huffman codes
-         if (a->zout >= a->zout_end) if (!expand(a, 1)) return 0;
-         *a->zout++ = (char) z;
-      } else {
-         uint8 *p;
-         int len,dist;
-         if (z == 256) return 1;
-         z -= 257;
-         len = length_base[z];
-         if (length_extra[z]) len += zreceive(a, length_extra[z]);
-         z = zhuffman_decode(a, &a->z_distance);
-         if (z < 0) return e("bad huffman code","Corrupt PNG");
-         dist = dist_base[z];
-         if (dist_extra[z]) dist += zreceive(a, dist_extra[z]);
-         if (a->zout - a->zout_start < dist) return e("bad dist","Corrupt PNG");
-         if (a->zout + len > a->zout_end) if (!expand(a, len)) return 0;
-         p = (uint8 *) (a->zout - dist);
-         while (len--)
-            *a->zout++ = *p++;
-      }
-   }
+
+   
+	   for (;;) {
+		   
+		   int z = zhuffman_decode(a, &a->z_length);
+		   if (z < 256) {
+			   if (z < 0) return e("bad huffman code", "Corrupt PNG"); // error in huffman codes
+			   if (a->zout >= a->zout_end) if (!expand(a, 1)) return 0;
+			   *a->zout++ = (char)z;
+		   }
+		   else {
+			   uint8 *p;
+			   int len, dist;
+			   if (z == 256) return 1;
+			   z -= 257;
+			   len = length_base[z];
+			   if (length_extra[z]) len += zreceive(a, length_extra[z]);
+			   z = zhuffman_decode(a, &a->z_distance);
+			   if (z < 0) return e("bad huffman code", "Corrupt PNG");
+			   dist = dist_base[z];
+			   if (dist_extra[z]) dist += zreceive(a, dist_extra[z]);
+			   if (a->zout - a->zout_start < dist) return e("bad dist", "Corrupt PNG");
+			   if (a->zout + len > a->zout_end) if (!expand(a, len)) return 0;
+			   p = (uint8 *)(a->zout - dist);
+			   while (len--)
+				   *a->zout++ = *p++;
+		   }
+	   }
+   
+  
+   
 }
 
 static int compute_huffman_codes(zbuf *a)

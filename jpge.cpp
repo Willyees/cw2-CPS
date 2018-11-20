@@ -22,6 +22,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <omp.h>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -78,7 +79,7 @@ static void Y_to_YCC(image *img, const uint8 *pSrc, int width, int y)
     }
 }
 
-inline float image::get_px(int x, int y)
+inline float image::get_px(const int& x, const int& y)
 {
     return m_pixels[y*m_x + x];
 }
@@ -823,6 +824,7 @@ bool jpeg_encoder::emit_end_markers()
 
 bool jpeg_encoder::compress_image()
 {
+#pragma omp parallel for num_threads(3)
     for(int c=0; c < m_num_components; c++) {
         for (int y = 0; y < m_image[c].m_y; y+= 8) {
             for (int x = 0; x < m_image[c].m_x; x += 8) {
