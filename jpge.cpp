@@ -55,6 +55,7 @@ template <class T> inline void clear_obj(T &obj)
 
 template<class T> static void RGB_to_YCC(image *img, const T *src, int width, int y)
 {
+#pragma omp parallel num_threads(2)
     for (int x = 0; x < width; x++) {
         const int r = src[x].r, g = src[x].g, b = src[x].b;
         img[0].set_px( (0.299     * r) + (0.587     * g) + (0.114     * b)-128.0, x, y);
@@ -835,6 +836,7 @@ bool jpeg_encoder::compress_image()
         }
     }
 
+#pragma omp parallel for num_threads(2)
     for (int y = 0; y < m_y; y+= m_mcu_h) {
         code_mcu_row(y, false);
     }
@@ -925,26 +927,31 @@ void jpeg_encoder::deinit()
 
 bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp)
 {
+	int thread = omp_get_thread_num();
+	int threads = omp_get_num_threads();
+
     if (bpp != 1 && bpp != 3 && bpp != 4) {
         return false;
     }
-
-    for (int y = 0; y < height; y++) {
+//#pragma omp parallel for num_threads(2)
+    for (int y = height * thread; y < height * thread + height; y++) {
         if (m_num_components == 1) {
             load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
         } else {
             load_mcu_YCC(image_data + width * y * bpp, width, bpp, y);
         }
     }
-
+ 
     for(int c=0; c < m_num_components; c++) {
-        for (int y = height; y < m_image[c].m_y; y++) {
+//#pragma omp parallel for
+        for (int y = height * 2; y < m_image[c].m_y; y++) {//adding some lines at the end of the image. todo: modify the hardcoded '2'
             for(int x=0; x < m_image[c].m_x; x++) {
                 m_image[c].set_px(m_image[c].get_px(x, y-1), x, y);
             }
         }
     }
-
+	if(thread == 0)
+	//both thread will do same work on this function call: waste
     if (m_comp[0].m_h_samp == 2) {
         for(int c=1; c < m_num_components; c++) {
             m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
@@ -955,7 +962,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
     // so distortions (ringing) will be clamped by the decoder
     if (m_huff[0].m_quantization_table[0] > 2) {
         for(int c=0; c < m_num_components; c++) {
-            for(int y=0; y < m_image[c].m_y; y++) {
+            for(int y=m_image[c].m_y / threads * thread; y < m_image[c].m_y / threads * (thread + 1); y++) {
                 for(int x=0; x < m_image[c].m_x; x++) {
                     float px = m_image[c].get_px(x,y);
                     if (px <= -128.f) {
@@ -1039,13 +1046,18 @@ bool compress_image_to_jpeg_file(const char *pFilename, int width, int height, i
 bool compress_image_to_stream(output_stream &dst_stream, int width, int height, int num_channels, const uint8 *pImage_data, const params &comp_params)
 {
     jpge::jpeg_encoder encoder;
+	int threads = 2;
+
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
-
-    if (!encoder.read_image(pImage_data, width, height, num_channels)) {
-        return false;
+#pragma omp parallel num_threads(threads)
+{
+		/*printf("thread %d", omp_get_thread_num());*/
+    if (!encoder.read_image(pImage_data, width, height / threads, num_channels)) {
+        //return false; have to suppress becuase thread cannot return value
     }
+}
 
     if (!encoder.compress_image()) {
         return false;
