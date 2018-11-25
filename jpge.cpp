@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <omp.h>
+#include <thread>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -55,13 +56,13 @@ template <class T> inline void clear_obj(T &obj)
 
 template<class T> static void RGB_to_YCC(image *img, const T *src, int width, int y)
 {
-#pragma omp parallel num_threads(2)
-    for (int x = 0; x < width; x++) {
-        const int r = src[x].r, g = src[x].g, b = src[x].b;
-        img[0].set_px( (0.299     * r) + (0.587     * g) + (0.114     * b)-128.0, x, y);
-        img[1].set_px(-(0.168736  * r) - (0.331264  * g) + (0.5       * b), x, y);
-        img[2].set_px( (0.5       * r) - (0.418688  * g) - (0.081312  * b), x, y);
-    }
+
+	for (int x = 0; x < width; x++) {
+		const int r = src[x].r, g = src[x].g, b = src[x].b;
+		img[0].set_px((0.299     * r) + (0.587     * g) + (0.114     * b) - 128.0, x, y);
+		img[1].set_px(-(0.168736  * r) - (0.331264  * g) + (0.5       * b), x, y);
+		img[2].set_px((0.5       * r) - (0.418688  * g) - (0.081312  * b), x, y);
+	}
 }
 
 template<class T> static void RGB_to_Y(image &img, const T *pSrc, int width, int y)
@@ -737,8 +738,10 @@ void jpeg_encoder::put_bits(uint bits, uint len)
 
 void jpeg_encoder::code_block(dctq_t *src, huffman_dcac *huff, component *comp, bool write)
 {
+	//difference from previous dc value (difference takes less space to be stored compared to full value)
     const int dc_delta = src[0] - comp->m_last_dc_val;
     comp->m_last_dc_val = src[0];
+	
 
     const uint nbits = bit_count(dc_delta);
 
@@ -746,7 +749,10 @@ void jpeg_encoder::code_block(dctq_t *src, huffman_dcac *huff, component *comp, 
         put_bits(huff->dc.m_codes[nbits], huff->dc.m_code_sizes[nbits]);
         put_signed_int_bits(dc_delta, nbits);
     } else {
+
         huff->dc.m_count[nbits]++;
+	
+		
     }
 
     int run_len = 0;
@@ -756,32 +762,46 @@ void jpeg_encoder::code_block(dctq_t *src, huffman_dcac *huff, component *comp, 
             run_len++;
         } else {
             while (run_len >= 16) {
-                if (write) {
+
+				if (write) {
                     put_bits(huff->ac.m_codes[0xF0], huff->ac.m_code_sizes[0xF0]);
                 } else {
+
+					
                     huff->ac.m_count[0xF0]++;
+					
+					
                 }
                 run_len -= 16;
             }
             const uint nbits = bit_count(ac_val);
             const int code = (run_len << 4) + nbits;
 
-            if (write) {
+			if (write) {
                 put_bits(huff->ac.m_codes[code], huff->ac.m_code_sizes[code]);
                 put_signed_int_bits(ac_val, nbits);
             } else {
+
+				
                 huff->ac.m_count[code]++;
+				
+				
             }
             run_len = 0;
         }
     }
     if (run_len) {
+
         if (write) {
             put_bits(huff->ac.m_codes[0], huff->ac.m_code_sizes[0]);
         } else {
+
+			
             huff->ac.m_count[0]++;
+			
         }
     }
+	//printf("%d\n", count);
 }
 
 void jpeg_encoder::code_mcu_row(int y, bool write)
@@ -825,32 +845,58 @@ bool jpeg_encoder::emit_end_markers()
 
 bool jpeg_encoder::compress_image()
 {
-#pragma omp parallel for num_threads(3)
-    for(int c=0; c < m_num_components; c++) {
-        for (int y = 0; y < m_image[c].m_y; y+= 8) {
-            for (int x = 0; x < m_image[c].m_x; x += 8) {
-                dct_t sample[64];
-                m_image[c].load_block(sample, x, y);
-                quantize_pixels(sample, m_image[c].get_dctq(x, y), m_huff[c > 0].m_quantization_table);
-            }
-        }
-    }
+	int threads = omp_get_num_threads();
+	int thread = omp_get_thread_num();
+	
+	//it can be parallelised: only work on its 8x8 grid, not referer to any other block
+	//creating block 8x8 and loading into the image[component] the quantized pixels using the quantized table stored in m_huff[0 or 1]
+	//interally uses also zag array on the block pixels passed to quantized function.
+	//the new values are stored in dctq table inside the image[component] -> try reduce coeffients near to 0
+		for (int c = 0; c < m_num_components; c++) {
 
-#pragma omp parallel for num_threads(2)
-    for (int y = 0; y < m_y; y+= m_mcu_h) {
-        code_mcu_row(y, false);
-    }
+			int work_height = m_image[c].m_y / threads / 8 * 8;
+			int work_additional = 0;
+			if (thread == threads - 1)
+				work_additional = m_image[c].m_y - work_height * threads;
+			printf("\ninitial%d:    end: %d\n", work_height * thread, m_image[c].m_y / threads / 8 * 8 * (thread + 1) + work_additional);
+			for (int y = work_height * thread; y < m_image[c].m_y / threads / 8 * 8 * (thread + 1) + work_additional; y += 8) {
+
+				//for(int y = 0; y < m_image[c].m_y; y += 8) {
+				for (int x = 0; x < m_image[c].m_x; x += 8) {
+					dct_t sample[64];
+					m_image[c].load_block(sample, x, y);
+					quantize_pixels(sample, m_image[c].get_dctq(x, y), m_huff[c > 0].m_quantization_table);
+				}
+			}
+		}
+	//here utilizing the huffman_dcac. It is a shared array an will result in race conditions if not locked 
+	//in code_block() it is referred the previous dc value stored in component. It can't be parallelised. 
+	if (thread == 0)
+		//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y+= m_mcu_h) {
+		for(int y = 0; y < m_y; y += m_mcu_h) {
+			code_mcu_row(y, false);
+		}
+//#pragma omp barrier
+
+	if (thread == 0) {
     compute_huffman_tables();
     reset_last_dc();
 
     emit_start_markers();
-    for (int y = 0; y < m_y; y+= m_mcu_h) {
-        if (!m_all_stream_writes_succeeded) {
+	
+	//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y += m_mcu_h) {
+    for(int y = 0; y < m_y; y += m_mcu_h) {
+		if (!m_all_stream_writes_succeeded) {
             return false;
         }
+		//printf("%d\n", y);
         code_mcu_row(y, true);
     }
+	
     return emit_end_markers();
+	}
+	return true;//second thread returning
+	
 }
 
 void jpeg_encoder::load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y)
@@ -929,54 +975,70 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 {
 	int thread = omp_get_thread_num();
 	int threads = omp_get_num_threads();
+	int work_height = height / threads;
+	int work_additional = 0;
+	if (thread == threads - 1)
+		if (work_height * threads != height){
+			//work_height += height - (work_height * threads);
+			work_additional = height - (work_height * threads);
+		}
+	printf("height:%d additional:%d", work_height, work_additional);
+	//printf("threadID:%d threads:%d", thread, threads);
+	if (bpp != 1 && bpp != 3 && bpp != 4) {
+		return false;
+	}
+	//if(thread == 0)
+		//for (int y = 0; y < height; y++) {
+		for (int y = work_height * thread; y < work_height * (thread + 1) + work_additional; y++) {
+			if (m_num_components == 1) {
+				load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
+			}
+			else {
+				load_mcu_YCC(image_data + width * y * bpp, width, bpp, y);
+			}
+			
+		}
+#pragma omp barrier //have to wait for second thread to finish, otherwise its data won't be used
+	//if run by all the threads, it could produce data race. Better give it only to last thread (is responsible for this part of the data)
+	//data race beacause inner loop accesses the last line and it could have not being set by other thread
+	if (thread == 0)
+		for (int c = 0; c < m_num_components; c++) {
+			for (int y = height; y < m_image[c].m_y; y++) {//adding some lines at the end of the image. todo: modify the hardcoded '2'
+				for (int x = 0; x < m_image[c].m_x; x++) {
+					m_image[c].set_px(m_image[c].get_px(x, y - 1), x, y);
+				}
+			}
+		}
+	//subsample has 2 for loops that could be parallelised in some way
+	if (thread == 0)
+		if (m_comp[0].m_h_samp == 2) {
+			for (int c = 1; c < m_num_components; c++) {
+				m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
+			}
+		}
+	if (thread == 0)
+		// overflow white and black, making distortions overflow as well,
+		// so distortions (ringing) will be clamped by the decoder
+		if (m_huff[0].m_quantization_table[0] > 2) {
+			for (int c = 0; c < m_num_components; c++) {
+				for (int y = 0; y < m_image[c].m_y; y++) {
+					//for (int y = m_image[c].m_y / threads * thread; y < m_image[c].m_y / threads * (thread + 1); y++) {
+					for (int x = 0; x < m_image[c].m_x; x++) {
+						float px = m_image[c].get_px(x, y);
+						if (px <= -128.f) {
+							px -= m_huff[0].m_quantization_table[0];
+						}
+						else if (px >= 128.f) {
+							px += m_huff[0].m_quantization_table[0];
+						}
+						m_image[c].set_px(px, x, y);
+					}
+				}
+			}
+		}
 
-    if (bpp != 1 && bpp != 3 && bpp != 4) {
-        return false;
-    }
-//#pragma omp parallel for num_threads(2)
-    for (int y = height * thread; y < height * thread + height; y++) {
-        if (m_num_components == 1) {
-            load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
-        } else {
-            load_mcu_YCC(image_data + width * y * bpp, width, bpp, y);
-        }
-    }
- 
-    for(int c=0; c < m_num_components; c++) {
-//#pragma omp parallel for
-        for (int y = height * 2; y < m_image[c].m_y; y++) {//adding some lines at the end of the image. todo: modify the hardcoded '2'
-            for(int x=0; x < m_image[c].m_x; x++) {
-                m_image[c].set_px(m_image[c].get_px(x, y-1), x, y);
-            }
-        }
-    }
-	if(thread == 0)
-	//both thread will do same work on this function call: waste
-    if (m_comp[0].m_h_samp == 2) {
-        for(int c=1; c < m_num_components; c++) {
-            m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
-        }
-    }
-
-    // overflow white and black, making distortions overflow as well,
-    // so distortions (ringing) will be clamped by the decoder
-    if (m_huff[0].m_quantization_table[0] > 2) {
-        for(int c=0; c < m_num_components; c++) {
-            for(int y=m_image[c].m_y / threads * thread; y < m_image[c].m_y / threads * (thread + 1); y++) {
-                for(int x=0; x < m_image[c].m_x; x++) {
-                    float px = m_image[c].get_px(x,y);
-                    if (px <= -128.f) {
-                        px -= m_huff[0].m_quantization_table[0];
-                    } else if (px >= 128.f) {
-                        px += m_huff[0].m_quantization_table[0];
-                    }
-                    m_image[c].set_px(px, x, y);
-                }
-            }
-        }
-    }
-
-    return true;
+	return true;
+	
 }
 
 
@@ -1051,19 +1113,23 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
-#pragma omp parallel num_threads(threads)
-{
-		/*printf("thread %d", omp_get_thread_num());*/
-    if (!encoder.read_image(pImage_data, width, height / threads, num_channels)) {
+	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
+	
+#pragma omp parallel num_threads(2)	
+	{
+		//assign surplus work to last thread in case the work cannot be split evenly (height is odd)
+		
+    if (!encoder.read_image(pImage_data, width, height, num_channels)) {
         //return false; have to suppress becuase thread cannot return value
-    }
-}
+		}
+	}
 
+#pragma omp parallel num_threads(2)
     if (!encoder.compress_image()) {
-        return false;
+        //return false;
     }
 
-    encoder.deinit();
+    encoder.deinit(); 
     return true;
 }
 
