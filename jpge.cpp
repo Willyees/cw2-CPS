@@ -98,17 +98,23 @@ dctq_t *image::get_dctq(int x, int y)
 
 void image::subsample(image &luma, int v_samp)
 {
+	/*int threads = omp_get_num_threads();
+	int thread = omp_get_thread_num();
+	int work_width = m_x / threads;*/
     if (v_samp == 2) {
-        for(int y=0; y < m_y; y+=2) {
-            for(int x=0; x < m_x; x+=2) {
-                m_pixels[m_x/4*y + x/2] = blend_quad(x, y, luma);
-            }
-        }
+		for (int y = 0; y < m_y; y += 2) {
+			for(int x = 0; x < m_x; x +=2) {
+			
+			//for (int x = work_width * thread; x < work_width * (thread + 1); x += 2) {
+            m_pixels[m_x/4*y + x/2] = blend_quad(x, y, luma);
+			}
+		}
+		
         m_x /= 2;
         m_y /= 2;
     } else {
         for(int y=0; y < m_y; y++) {
-            for(int x=0; x < m_x; x+=2) {
+            for(int x = 0; x < m_x; x += 2) {
                 m_pixels[m_x/2*y + x/2] = blend_dual(x, y, luma);
             }
         }
@@ -658,7 +664,7 @@ inline dct_t image::blend_dual(int x, int y, image &luma)
     return (get_px(x,  y)*a
           + get_px(x+1,y)*b) / (a+b);
 }
-
+//mean of the pixel in the square x, y compared to the luma component. Normalized substracting 129 to have them around 0.
 inline dct_t image::blend_quad(int x, int y, image &luma)
 {
     dct_t a = 129-fabs(luma.get_px(x,  y  ));
@@ -858,7 +864,7 @@ bool jpeg_encoder::compress_image()
 			int work_additional = 0;
 			if (thread == threads - 1)
 				work_additional = m_image[c].m_y - work_height * threads;
-			printf("\ninitial%d:    end: %d\n", work_height * thread, m_image[c].m_y / threads / 8 * 8 * (thread + 1) + work_additional);
+			
 			for (int y = work_height * thread; y < m_image[c].m_y / threads / 8 * 8 * (thread + 1) + work_additional; y += 8) {
 
 				//for(int y = 0; y < m_image[c].m_y; y += 8) {
@@ -982,7 +988,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 			//work_height += height - (work_height * threads);
 			work_additional = height - (work_height * threads);
 		}
-	printf("height:%d additional:%d", work_height, work_additional);
+	
 	//printf("threadID:%d threads:%d", thread, threads);
 	if (bpp != 1 && bpp != 3 && bpp != 4) {
 		return false;
@@ -999,30 +1005,44 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 			
 		}
 #pragma omp barrier //have to wait for second thread to finish, otherwise its data won't be used
-	//if run by all the threads, it could produce data race. Better give it only to last thread (is responsible for this part of the data)
-	//data race beacause inner loop accesses the last line and it could have not being set by other thread
-	if (thread == 0)
+	
 		for (int c = 0; c < m_num_components; c++) {
-			for (int y = height; y < m_image[c].m_y; y++) {//adding some lines at the end of the image. todo: modify the hardcoded '2'
+			work_height = (m_image[c].m_y - height) / threads;
+			work_additional = 0;
+			if (thread == threads - 1)
+				work_additional = m_image[c].m_y - (height + work_height * threads);
+			//printf("additional:%d height:%d", work_additional, work_height);
+			for (int y = height; y < height + work_height * (thread + 1) + work_additional; y++) {//adding some lines at the end of the image
 				for (int x = 0; x < m_image[c].m_x; x++) {
 					m_image[c].set_px(m_image[c].get_px(x, y - 1), x, y);
 				}
 			}
 		}
-	//subsample has 2 for loops that could be parallelised in some way
-	if (thread == 0)
+	//reduces the m_x and m_y by 2 (create a 2x2 grid pixel into a single pixel storing the average croma colour), or only m_y / 2
+	//the pixel modified are not the ones pointed by x and y. If parallelised it will affect other threads
+//#pragma omp barrier
+		if(thread == 0)
 		if (m_comp[0].m_h_samp == 2) {
 			for (int c = 1; c < m_num_components; c++) {
 				m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
 			}
 		}
-	if (thread == 0)
+#pragma omp barrier //have to wait for first thread to subsample because it will modify m_y of the image
+
 		// overflow white and black, making distortions overflow as well,
 		// so distortions (ringing) will be clamped by the decoder
 		if (m_huff[0].m_quantization_table[0] > 2) {
 			for (int c = 0; c < m_num_components; c++) {
-				for (int y = 0; y < m_image[c].m_y; y++) {
-					//for (int y = m_image[c].m_y / threads * thread; y < m_image[c].m_y / threads * (thread + 1); y++) {
+				work_height = m_image[c].m_y / threads;
+				work_additional = 0;
+				if (thread == threads - 1)
+					if (work_height * threads != m_image[c].m_y) {
+						//work_height += height - (work_height * threads);
+						work_additional = m_image[c].m_y - (work_height * threads);
+					}
+				
+				//for (int y = 0; y < m_image[c].m_y; y++) {
+				for (int y = work_height * thread; y < work_height * (thread + 1) + work_additional; y++) {
 					for (int x = 0; x < m_image[c].m_x; x++) {
 						float px = m_image[c].get_px(x, y);
 						if (px <= -128.f) {
@@ -1115,16 +1135,16 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     }
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	
-#pragma omp parallel num_threads(2)	
+#pragma omp parallel num_threads(8)	
 	{
-		//assign surplus work to last thread in case the work cannot be split evenly (height is odd)
+		
 		
     if (!encoder.read_image(pImage_data, width, height, num_channels)) {
         //return false; have to suppress becuase thread cannot return value
 		}
 	}
 
-#pragma omp parallel num_threads(2)
+#pragma omp parallel num_threads(8)
     if (!encoder.compress_image()) {
         //return false;
     }
