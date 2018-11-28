@@ -36,6 +36,7 @@
 #else
 #define strcpy_s(d, c, s) strcpy(d, s)
 #endif
+//#define MAIN_LOOP
 
 static int print_usage()
 {
@@ -274,7 +275,9 @@ int main(int arg_c, char *ppArgs[])
 	std::ofstream file("times.csv", std::ios_base::out);
 	file.clear();
 	file.close();
+#ifdef MAIN_LOOP
 	for (int i = 0; i < 10; ++i) {
+#endif
 		auto start = std::chrono::system_clock::now();
 		printf("jpge/jpgd example app\n");
 
@@ -362,6 +365,7 @@ int main(int arg_c, char *ppArgs[])
 		const int req_comps = 3; // request RGB image
 		int width = 0, height = 0, actual_comps = 0;
 		uint8 *pImage_data = stbi_load(pSrc_filename, &width, &height, &actual_comps, req_comps);
+	
 		if (!pImage_data) {
 			log_printf("Failed loading file \"%s\"!\n", pSrc_filename);
 			return EXIT_FAILURE;
@@ -450,7 +454,9 @@ int main(int arg_c, char *ppArgs[])
 		}
 		log_printf("Success.\n");
 		times_f.close();
+#ifdef MAIN_LOOP
 	}
+#endif
 	
 	
     return EXIT_SUCCESS;

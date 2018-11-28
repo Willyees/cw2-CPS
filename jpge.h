@@ -130,7 +130,7 @@ public:
     dctq_t *get_dctq(int x, int y);
 
     void subsample(image &luma, int v_samp);
-
+	float* get_pixels() { return m_pixels; }
 private:
     float *m_pixels;
     dctq_t *m_dctqs; // quantized dcts

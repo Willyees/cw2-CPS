@@ -1,3 +1,7 @@
+Run CMake to compile executable
+CMake will look for OpenCL.lib into CUDA directory, so it is thought that CUDA will be installed on the system. 
+If not modify CMakeLists.txt to point to OpenCL.lib in your system.
+
 # Research JPEG encoder
 
 Codename "Nether Poppleton"
