@@ -133,6 +133,7 @@ public:
 	float* get_pixels() { return m_pixels; }
 private:
     float *m_pixels;
+
     dctq_t *m_dctqs; // quantized dcts
 
     dct_t blend_dual(int x, int y, image &);
@@ -169,7 +170,8 @@ public:
     // You must call after all scanlines are processed to finish compression.
     bool compress_image();
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
-    void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
+	void RGB_to_YCC_opencl(const uint8 * pSrc, int width, int height);
+	void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
 
 private:
     jpeg_encoder(const jpeg_encoder &);

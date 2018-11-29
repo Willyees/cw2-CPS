@@ -36,7 +36,7 @@
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
 
-//opencl test;
+opencl test;
 
 namespace jpge
 {
@@ -885,6 +885,59 @@ const int w = 4072;
 const int h = 4133;
 const int SIZE = w * h * sizeof(uint8);
 const int DATA_SIZE = w * h * sizeof(uint8) * 3;
+
+void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
+	try {
+
+		cl::Buffer src(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
+		//cl::Buffer buff_b(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
+		cl::Buffer image0(test.context, CL_MEM_WRITE_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
+		cl::Buffer image1(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float));
+		cl::Buffer image2(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
+		test.queue.enqueueWriteBuffer(src, CL_TRUE, 0, DATA_SIZE, pSrc);
+
+		std::ifstream file("test1.cl");
+		if (!file)
+			printf("error opening kernel file");
+		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
+
+		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
+		cl::Program program(test.context, source);
+
+		// Build program for devices
+		program.build(test.devices);
+
+		// Create the kernel
+		cl::Kernel vecadd_kernel(program, "image_test");
+		//difference between the original width and images storing YCC components width
+		int diff = m_image[0].m_x - width;
+		// Set kernel arguments
+		vecadd_kernel.setArg(0, src);
+		vecadd_kernel.setArg(1, image0);
+		vecadd_kernel.setArg(2, image1);
+		vecadd_kernel.setArg(3, image2);
+		vecadd_kernel.setArg(4, diff);
+		vecadd_kernel.setArg(5, width);
+
+		// Execute kernel
+		cl::NDRange global(w*h);
+		cl::NDRange local(8);
+		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
+
+		// Copy result back.
+		std::vector<float> v(w * h * sizeof(float));
+		test.queue.enqueueReadBuffer(image0, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
+		test.queue.enqueueReadBuffer(image1, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float), m_image[1].get_pixels());
+		test.queue.enqueueReadBuffer(image2, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float), m_image[2].get_pixels());
+
+		//test.queue.finish();
+	}
+	catch (Error error)
+	{
+		cout << error.what() << "(" << error.err() << ")" << endl;
+	}
+}
+
 void jpeg_encoder::load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int height)
 {
 	/*for (int i = 0; i < 3; ++i)
@@ -893,82 +946,9 @@ void jpeg_encoder::load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int heigh
         //RGB_to_YCC(m_image, reinterpret_cast<const rgba *>(pSrc), width, y);
     } else if (bpp == 3) {
         //RGB_to_YCC(m_image, reinterpret_cast<const rgb *>(pSrc), width, y);
-		opencl test;
-		test.setOpenCL();
-		/*const rgb* temp = reinterpret_cast<const rgb *>(pSrc);
-		cout << (unsigned) temp[0].r << endl;
-		cout << (unsigned) temp[0].g << endl;
-		cout << (unsigned) temp[0].b << endl;
-		cout << (unsigned)pSrc[0] << endl;
-		cout << (unsigned)pSrc[1] << endl;
-		cout << (unsigned) pSrc[2] << endl;*/
+		RGB_to_YCC_opencl(pSrc, width, height);
 		
-		try {
-
-		cout << test.devices[0].getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>()[0] << endl;
-		
-		cout << test.devices[0].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl;
-		cl::Buffer src(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
-		//cl::Buffer buff_b(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
-		cl::Buffer image0(test.context, CL_MEM_WRITE_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
-		cl::Buffer image1(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float));
-		cl::Buffer image2(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
-		test.queue.enqueueWriteBuffer(src, CL_TRUE, 0, DATA_SIZE, pSrc);
-				
-		std::ifstream file("test1.cl");
-		if (!file)
-			printf("error opening kernel file");
-		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-
-		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-		cl:: Program program(test.context, source);
-
-		// Build program for devices
-		program.build(test.devices);
-
-		// Create the kernel
-		cl::Kernel vecadd_kernel(program, "image_test");
-
-		// Set kernel arguments
-		vecadd_kernel.setArg(0, src);
-		vecadd_kernel.setArg(1, image0);
-		vecadd_kernel.setArg(2, image1);
-		vecadd_kernel.setArg(3, image2);
-		
-		// Execute kernel
-		cl::NDRange global(w * h);
-		cl::NDRange local(8);
-		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
-
-		// Copy result back.
-		test.queue.enqueueReadBuffer(image0, CL_TRUE, 0, w * h * sizeof(float), m_image[0].get_pixels());
-		test.queue.enqueueReadBuffer(image1, CL_TRUE, 0, w * h * sizeof(float), m_image[1].get_pixels());
-		test.queue.enqueueReadBuffer(image2, CL_TRUE, 0, w * h * sizeof(float), m_image[2].get_pixels());
-		for(int i = 0; i < 5; i++){
-		cout << m_image[0].get_px(0,i) << endl;
-		cout << m_image[1].get_px(0,i) << endl;
-		cout << m_image[2].get_px(0,i) << endl;
-		}
-		//test.queue.finish();
-		}
-		catch (Error error)
-		{
-			cout << error.what() << "(" << error.err() << ")" << endl;
-		}
-		/*std::array<uint, w * h> r;
-		std::array<uint, w * h> g;
-		std::array<uint, w * h> b;
-		const rgb *temp;
-		for(int y = 0; y < height; ++y)
-			for (int x = 0; x < width; ++x) {
-				temp = reinterpret_cast<const rgb *>(pSrc + y * width * bpp + x);
-				r[y*width + x] = temp->r;
-				g[y*width + x] = temp->g;
-				b[y*width + x] = temp->b;
-			}*/
-
-		//kernel_RGB_to_YCC(m_image[0], m_image[1], m_image[2]	)
-    } else {
+	} else {
         //Y_to_YCC(m_image, pSrc, width, y);
     }
 
@@ -1144,7 +1124,7 @@ bool compress_image_to_jpeg_file(const char *pFilename, int width, int height, i
 bool compress_image_to_stream(output_stream &dst_stream, int width, int height, int num_channels, const uint8 *pImage_data, const params &comp_params)
 {
 	
-	//test.setOpenCL();
+	test.setOpenCL();
 	
     jpge::jpeg_encoder encoder;
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
