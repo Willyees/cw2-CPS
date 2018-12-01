@@ -105,6 +105,7 @@ dctq_t *image::get_dctq(int x, int y)
     return &m_dctqs[64*(y/8 * m_x/8 + x/8)];
 }
 
+
 void image::subsample(image &luma, int v_samp)
 {
     if (v_samp == 2) {
@@ -115,6 +116,9 @@ void image::subsample(image &luma, int v_samp)
         }
         m_x /= 2;
         m_y /= 2;
+
+
+
     } else {
         for(int y=0; y < m_y; y++) {
             for(int x=0; x < m_x; x+=2) {
@@ -373,6 +377,65 @@ void huffman_table::optimize(int table_len)
     for (int i = num_used_syms - 1; i >= 1; i--) {
         m_val[num_used_syms - 1 - i] = static_cast<uint8>(pSyms[i].m_sym_index - 1);
     }
+}
+
+void jpeg_encoder::subsample_opencl(int v_samp) {
+	if (v_samp == 2) {
+
+		try {
+			cl::Buffer luma(test.context, CL_MEM_READ_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
+			cl::Buffer blue(test.context, CL_MEM_READ_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float));
+			cl::Buffer red(test.context, CL_MEM_READ_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
+			cl::Buffer blue_buff(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float) / 4);
+			cl::Buffer red_buff(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float) / 4);
+
+			test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
+			test.queue.enqueueWriteBuffer(blue, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float), m_image[1].get_pixels());
+			test.queue.enqueueWriteBuffer(red, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float), m_image[2].get_pixels());
+
+			std::ifstream file("subsample.cl");
+			if (!file)
+				std::cout << "error reading kernel file" << std::endl;
+			std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
+			cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
+			cl::Program program(test.context, source);
+
+			// Build program for devices
+			program.build(test.devices);
+
+			// Create the kernel
+			cl::Kernel subsample_kernel(program, "subsample2x2");
+
+			subsample_kernel.setArg(0, luma);
+			subsample_kernel.setArg(1, blue);
+			subsample_kernel.setArg(2, red);
+			subsample_kernel.setArg(3, m_image[0].m_x);
+			subsample_kernel.setArg(4, blue_buff);
+			subsample_kernel.setArg(5, red_buff);
+			cl::NDRange global((m_image[0].m_x *  m_image[0].m_y) / 4);
+			//calculate group size
+			cl::NDRange local(64);
+			test.queue.enqueueNDRangeKernel(subsample_kernel, 0, global, local);
+			//read buffers back
+			test.queue.enqueueReadBuffer(blue_buff, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float) / 4, m_image[1].get_pixels());
+			test.queue.enqueueReadBuffer(red_buff, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float) / 4, m_image[2].get_pixels());
+
+		}
+		catch (cl::Error error) {
+			std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+		}
+		m_image[1].m_x /= 2;
+		m_image[1].m_y /= 2;
+		m_image[2].m_x /= 2;
+		m_image[2].m_y /= 2;
+	}
+	else {
+		/*add case v_samp != 2*/
+		std::cout << "TODO: add case v_samp != 2" << std::endl;
+		m_image[0].m_x /= 2;
+		m_image[1].m_y /= 2;
+	}
+
 }
 
 // JPEG marker generation.
@@ -667,7 +730,7 @@ inline dct_t image::blend_dual(int x, int y, image &luma)
     return (get_px(x,  y)*a
           + get_px(x+1,y)*b) / (a+b);
 }
-
+//uses luma (m_image[0]) normalized around 0 and apply the group of pixels to correspondent block of Croma m_image[1] and m_image[2]
 inline dct_t image::blend_quad(int x, int y, image &luma)
 {
     dct_t a = 129-fabs(luma.get_px(x,  y  ));
@@ -881,12 +944,12 @@ void jpeg_encoder::load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y)
 using namespace cl;
 using namespace std;
 
-const int w = 4072;
-const int h = 4133;
-const int SIZE = w * h * sizeof(uint8);
-const int DATA_SIZE = w * h * sizeof(uint8) * 3;
-
+//hardcoded bpp becuase this function is called in branch of bpp == 3
 void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
+	
+	const int SIZE = width * height;
+	const int DATA_SIZE = SIZE * sizeof(uint8) * 3;
+	
 	try {
 
 		cl::Buffer src(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
@@ -920,16 +983,23 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 		vecadd_kernel.setArg(5, width);
 
 		// Execute kernel
-		cl::NDRange global(w*h);
-		cl::NDRange local(8);
+		cl::NDRange global(SIZE);
+		//find greatest divisor
+		int sqrt_val = sqrt(SIZE);
+		int group_size = SIZE;
+		int max_group_size = test.devices[0].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+		for (int i = 1; i < max_group_size; ++i)
+			if (SIZE % i == 0)
+				group_size = i;
+
+		cl::NDRange local(group_size);
+		cout << "greatest divisor: " << group_size << endl;
 		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
 
 		// Copy result back.
-		std::vector<float> v(w * h * sizeof(float));
 		test.queue.enqueueReadBuffer(image0, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
 		test.queue.enqueueReadBuffer(image1, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float), m_image[1].get_pixels());
 		test.queue.enqueueReadBuffer(image2, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float), m_image[2].get_pixels());
-
 		//test.queue.finish();
 	}
 	catch (Error error)
@@ -940,8 +1010,6 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 
 void jpeg_encoder::load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int height)
 {
-	/*for (int i = 0; i < 3; ++i)
-		printf("%d x %d y %d size", m_image[i].m_x, m_image[i].m_y, sizeof(m_image[i]));*/
 	if (bpp == 4) {
         //RGB_to_YCC(m_image, reinterpret_cast<const rgba *>(pSrc), width, y);
     } else if (bpp == 3) {
@@ -952,12 +1020,16 @@ void jpeg_encoder::load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int heigh
         //Y_to_YCC(m_image, pSrc, width, y);
     }
 
+	//TODO: use opencl on this
     // Possibly duplicate pixels at end of scanline if not a multiple of 8 or 16
-   /* for(int c=0; c < m_num_components; c++) {
-        const float lastpx = m_image[c].get_px(width - 1, y);
-        for (int x = width; x < m_image[0].m_x; x++) {
-            m_image[c].set_px(lastpx, x, y);
-        }*/
+	for (int c = 0; c < m_num_components; c++) {
+		for(int y = 0; y < height; ++y){
+			const float lastpx = m_image[c].get_px(width - 1, y);
+			for (int x = width; x < m_image[0].m_x; x++) {
+				m_image[c].set_px(lastpx, x, y);
+			}
+		}
+	}
 }
 
 
@@ -1017,24 +1089,30 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 		load_mcu_YCC(image_data /*+ width * y * bpp*/, width, bpp, height);
 	}
 
-
-	
-
-
-    for(int c=0; c < m_num_components; c++) {
+	//copy additional pixels into the m_y (it can be higher than original image)
+	for(int c=0; c < m_num_components; c++) {
         for (int y = height; y < m_image[c].m_y; y++) {
             for(int x=0; x < m_image[c].m_x; x++) {
                 m_image[c].set_px(m_image[c].get_px(x, y-1), x, y);
             }
         }
     }
-
-    if (m_comp[0].m_h_samp == 2) {
+	
+	//only subsample m_image[1] and m_image[2] (CromaC..) normalizing around 0
+   /* if (m_comp[0].m_h_samp == 2) {
         for(int c=1; c < m_num_components; c++) {
             m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
         }
-    }
+    }*/
 
+	subsample_opencl(m_comp[0].m_v_samp);
+	
+	
+	for (int i = 0; i < 5; ++i) {
+		cout << m_image[1].get_px(i, 1) << " ";
+		cout << m_image[2].get_px(i, 1) << " " << endl;
+	}
+	//return false; // temporary DEBUG
     // overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
     if (m_huff[0].m_quantization_table[0] > 2) {

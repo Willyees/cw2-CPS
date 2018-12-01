@@ -196,7 +196,9 @@ private:
 
     void rewrite_luma(const uint8 *image_data, int width, int height, int bpp);
 
-    void emit_byte(uint8 i);
+	void subsample_opencl(int v_samp);
+
+	void emit_byte(uint8 i);
     void emit_word(uint i);
     void emit_marker(int marker);
     void emit_jfif_app0();
