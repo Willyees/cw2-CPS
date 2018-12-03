@@ -1108,10 +1108,20 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 	subsample_opencl(m_comp[0].m_v_samp);
 	
 	
-	for (int i = 0; i < 5; ++i) {
-		cout << m_image[1].get_px(i, 1) << " ";
-		cout << m_image[2].get_px(i, 1) << " " << endl;
+	for (int c = 1; c < 3; ++c) {
+		for (int x = 0; x < 3; ++x)
+			std::cout << "inital: " << m_image[c].get_px(x, 0) << std::endl;
 	}
+	for (int c = 1; c < 3; ++c)
+		for (int x = m_image[1].m_x - 3; x < m_image[1].m_x; ++x) {
+			std::cout << "endline1: " << m_image[c].get_px(x, 0) << std::endl;
+		}
+	
+	for (int c = 1; c < 3; ++c)
+		for (int x = 0; x < 3; ++x) {
+			std::cout << "intialline2: " << m_image[c].get_px(x, 1) << std::endl;
+		}
+
 	//return false; // temporary DEBUG
     // overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
