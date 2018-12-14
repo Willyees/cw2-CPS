@@ -24,6 +24,8 @@
 #include <math.h>
 #include <omp.h>
 #include <thread>
+#include <fstream>
+#include <chrono>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -1128,11 +1130,13 @@ bool compress_image_to_jpeg_file(const char *pFilename, int width, int height, i
 bool compress_image_to_stream(output_stream &dst_stream, int width, int height, int num_channels, const uint8 *pImage_data, const params &comp_params)
 {
     jpge::jpeg_encoder encoder;
-	int threads = 2;
+	
 
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
+	auto start = std::chrono::system_clock::now();
+	int threads = 2;
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	
 #pragma omp parallel num_threads(8)	
@@ -1148,6 +1152,13 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     if (!encoder.compress_image()) {
         //return false;
     }
+
+	auto end = std::chrono::system_clock::now();
+	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+	printf("Total time: %f\n", result_time);
+	std::ofstream times_f("times.csv", std::ios_base::app);
+	times_f << result_time << std::endl;
+	times_f.close();
 
     encoder.deinit(); 
     return true;
