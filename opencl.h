@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-
+#define __CL_ENABLE_EXCEPTIONS
 #include <CL/cl.hpp>
 
 class opencl {

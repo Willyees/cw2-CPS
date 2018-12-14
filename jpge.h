@@ -18,6 +18,7 @@
 
 #ifndef JPEG_ENCODER_H
 #define JPEG_ENCODER_H
+#include "opencl.h"
 
 namespace jpge {
 typedef unsigned char  uint8;
@@ -124,13 +125,16 @@ public:
     int m_x, m_y;
 
     float get_px(int x, int y);
+	
     void set_px(float px, int x, int y);
 
     void load_block(dct_t *, int x, int y);
     dctq_t *get_dctq(int x, int y);
 
     void subsample(image &luma, int v_samp);
+	void quantization_opencl(opencl, const int32*);
 	float* get_pixels() { return m_pixels; }
+	
 private:
     float *m_pixels;
 
@@ -170,8 +174,12 @@ public:
     // You must call after all scanlines are processed to finish compression.
     bool compress_image();
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
-	void RGB_to_YCC_opencl(const uint8 * pSrc, int width, int height);
 	void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
+	void RGB_to_YCC_opencl(const uint8 * pSrc, int width, int height);
+	void clamping_distortions_opencl();
+	void quantization_luma_opencl(opencl);
+	void quantization_blue_opencl();
+	void quantization_red_opencl();
 
 private:
     jpeg_encoder(const jpeg_encoder &);
@@ -195,6 +203,8 @@ private:
     image m_image[3];
 
     void rewrite_luma(const uint8 *image_data, int width, int height, int bpp);
+
+	
 
 	void subsample_opencl(int v_samp);
 

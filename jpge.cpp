@@ -23,8 +23,8 @@
 #include <stdio.h>
 #include <math.h>
 /*additions*/
-#define __CL_ENABLE_EXCEPTIONS
-
+#include <iostream>
+#include <vector>
 #include <array>
 #include "opencl.h"
 #include <iostream>
@@ -127,6 +127,51 @@ void image::subsample(image &luma, int v_samp)
         }
         m_x /= 2;
     }
+}
+//quantization and round to zero on gpu
+void image::quantization_opencl(opencl test, const int32* quant) {
+	try {
+		
+		cl::Buffer luma(test.context, CL_MEM_READ_ONLY, m_x * m_y * sizeof(float));
+		cl::Buffer luma_buf(test.context, CL_MEM_WRITE_ONLY, m_x * m_y * sizeof(signed short));
+		cl::Buffer s_zag_buf(test.context, CL_MEM_READ_ONLY, sizeof(s_zag));//if do not work is because of size of 
+		cl::Buffer quant_buf(test.context, CL_MEM_READ_ONLY, sizeof(quant[0]) * 64);
+		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_x * m_y * sizeof(float), m_pixels);
+		test.queue.enqueueWriteBuffer(s_zag_buf, CL_TRUE, 0, sizeof(s_zag), s_zag);
+		test.queue.enqueueWriteBuffer(quant_buf, CL_TRUE, 0, sizeof(quant[0]) * 64, quant);
+		
+		std::ifstream file("quantization.cl");
+		if (!file)
+			std::cout << "error reading kernel file" << std::endl;
+		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
+		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
+		cl::Program program(test.context, source);
+		
+		// Build program for devices
+		program.build(test.devices);
+
+		// Create the kernel
+		cl::Kernel subsample_kernel(program, "dct_luma");
+
+		subsample_kernel.setArg(0, luma);
+		subsample_kernel.setArg(1, luma_buf);
+		subsample_kernel.setArg(2, m_x);
+		subsample_kernel.setArg(3, s_zag_buf);
+		subsample_kernel.setArg(4, quant_buf);
+		
+		cl::NDRange global(m_x / 8, m_y / 8);
+		//calculate group size
+		cl::NDRange local(64,64);//todo local not used atm
+		test.queue.enqueueNDRangeKernel(subsample_kernel, 0, global);
+		
+		//read buffers back
+		test.queue.enqueueReadBuffer(luma_buf, CL_TRUE, 0, m_x * m_y * sizeof(signed short), m_dctqs);
+		
+		
+	}
+	catch (cl::Error error) {
+		std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+	}
 }
 
 
@@ -378,7 +423,50 @@ void huffman_table::optimize(int table_len)
         m_val[num_used_syms - 1 - i] = static_cast<uint8>(pSyms[i].m_sym_index - 1);
     }
 }
+//Temporary to help with writing opencl function
+//load 8x8 pixel into the sample array, 
+/*for (int y = 0; y < m_image[c].m_y; y+= 8) {
+		for (int x = 0; x < m_image[c].m_x; x += 8) {
+			dct_t sample[64];
+			m_image[c].load_block(sample, x, y);
+			quantize_pixels(sample, m_image[c].get_dctq(x, y), m_huff[c > 0].m_quantization_table);
+		}
+	}*/
 
+void jpeg_encoder::quantization_luma_opencl(opencl test) {
+	try {
+		cl::Buffer luma(test.context, CL_MEM_READ_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
+		cl::Buffer luma_buf(test.context, CL_MEM_WRITE_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
+		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
+		std::ifstream file("quantization.cl");
+		if (!file)
+			std::cout << "error reading kernel file" << std::endl;
+		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
+		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
+		cl::Program program(test.context, source);
+		
+		// Build program for devices
+		program.build(test.devices);
+
+		// Create the kernel
+		cl::Kernel subsample_kernel(program, "dct_luma");
+
+		subsample_kernel.setArg(0, luma);
+		subsample_kernel.setArg(1, m_image[0].m_x);//not using
+		subsample_kernel.setArg(2, m_image[0].m_y);//not using
+		subsample_kernel.setArg(3, luma_buf);
+		//divide by 64 because creating grid 8x8 = 64
+		cl::NDRange global(m_image[0].m_x *  m_image[0].m_y / 64);
+		//calculate group size
+		cl::NDRange local(64);
+		test.queue.enqueueNDRangeKernel(subsample_kernel, 0, global, local);
+		//read buffers back
+		test.queue.enqueueReadBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(double), m_image[0].get_dctq(0, 0));
+	}
+	catch (cl::Error error) {
+		std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+	}
+}
 void jpeg_encoder::subsample_opencl(int v_samp) {
 	if (v_samp == 2) {
 
@@ -711,16 +799,17 @@ void image::deinit() {
 void image::load_block(dct_t *pDst, int x, int y)
 {
     uint8 *pSrc;
-    for (int i = 0; i < 8; i++, pDst += 8) {
-        pDst[0] = get_px(x+0, y+i);
-        pDst[1] = get_px(x+1, y+i);
-        pDst[2] = get_px(x+2, y+i);
-        pDst[3] = get_px(x+3, y+i);
-        pDst[4] = get_px(x+4, y+i);
-        pDst[5] = get_px(x+5, y+i);
-        pDst[6] = get_px(x+6, y+i);
-        pDst[7] = get_px(x+7, y+i);
-    }
+	
+	for (int i = 0; i < 8; i++, pDst += 8) {
+		pDst[0] = get_px(x + 0, y + i);
+		pDst[1] = get_px(x + 1, y + i);
+		pDst[2] = get_px(x + 2, y + i);
+		pDst[3] = get_px(x + 3, y + i);
+		pDst[4] = get_px(x + 4, y + i);
+		pDst[5] = get_px(x + 5, y + i);
+		pDst[6] = get_px(x + 6, y + i);
+		pDst[7] = get_px(x + 7, y + i);
+	}
 }
 
 inline dct_t image::blend_dual(int x, int y, image &luma)
@@ -756,10 +845,11 @@ inline static dctq_t round_to_zero(const dct_t j, const int32 quant)
 
 void jpeg_encoder::quantize_pixels(dct_t *pSrc, dctq_t *pDst, const int32 *quant)
 {
-    dct(pSrc);
+	//dct(pSrc);
     for (int i = 0; i < 64; i++) {
         pDst[i] = round_to_zero(pSrc[s_zag[i]], quant[i]);
     }
+	
 }
 
 void jpeg_encoder::flush_output_buffer()
@@ -898,16 +988,11 @@ bool jpeg_encoder::emit_end_markers()
 
 bool jpeg_encoder::compress_image()
 {
-    for(int c=0; c < m_num_components; c++) {
-        for (int y = 0; y < m_image[c].m_y; y+= 8) {
-            for (int x = 0; x < m_image[c].m_x; x += 8) {
-                dct_t sample[64];
-                m_image[c].load_block(sample, x, y);
-                quantize_pixels(sample, m_image[c].get_dctq(x, y), m_huff[c > 0].m_quantization_table);
-            }
-        }
-    }
-
+	//might send them on gpu without waiting that the previous has finished, then barrier when for loop is exiting
+	for(int c = 0; c < m_num_components; c++)
+		m_image[c].quantization_opencl(test, m_huff[c > 0].m_quantization_table);
+		
+	
     for (int y = 0; y < m_y; y+= m_mcu_h) {
         code_mcu_row(y, false);
     }
@@ -1107,23 +1192,11 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 
 	subsample_opencl(m_comp[0].m_v_samp);
 	
-	
-	for (int c = 1; c < 3; ++c) {
-		for (int x = 0; x < 3; ++x)
-			std::cout << "inital: " << m_image[c].get_px(x, 0) << std::endl;
-	}
-	for (int c = 1; c < 3; ++c)
-		for (int x = m_image[1].m_x - 3; x < m_image[1].m_x; ++x) {
-			std::cout << "endline1: " << m_image[c].get_px(x, 0) << std::endl;
-		}
-	
-	for (int c = 1; c < 3; ++c)
-		for (int x = 0; x < 3; ++x) {
-			std::cout << "intialline2: " << m_image[c].get_px(x, 1) << std::endl;
-		}
 
-	//return false; // temporary DEBUG
-    // overflow white and black, making distortions overflow as well,
+	//clamping_distortions_opencl();
+	
+	//branching. If using GPU all the branches will be executed. Attempting anyways
+	// overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
     if (m_huff[0].m_quantization_table[0] > 2) {
         for(int c=0; c < m_num_components; c++) {
@@ -1135,7 +1208,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
                     } else if (px >= 128.f) {
                         px += m_huff[0].m_quantization_table[0];
                     }
-                    m_image[c].set_px(px, x, y);
+					m_image[c].set_px(px, x, y);
                 }
             }
         }
