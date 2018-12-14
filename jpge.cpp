@@ -26,6 +26,7 @@
 #include <iostream>
 #include <vector>
 #include <array>
+#include <chrono>
 #include "opencl.h"
 #include <iostream>
 #include <fstream>
@@ -134,7 +135,7 @@ void image::quantization_opencl(opencl test, const int32* quant) {
 		
 		cl::Buffer luma(test.context, CL_MEM_READ_ONLY, m_x * m_y * sizeof(float));
 		cl::Buffer luma_buf(test.context, CL_MEM_WRITE_ONLY, m_x * m_y * sizeof(signed short));
-		cl::Buffer s_zag_buf(test.context, CL_MEM_READ_ONLY, sizeof(s_zag));//if do not work is because of size of 
+		cl::Buffer s_zag_buf(test.context, CL_MEM_READ_ONLY, sizeof(s_zag));
 		cl::Buffer quant_buf(test.context, CL_MEM_READ_ONLY, sizeof(quant[0]) * 64);
 		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_x * m_y * sizeof(float), m_pixels);
 		test.queue.enqueueWriteBuffer(s_zag_buf, CL_TRUE, 0, sizeof(s_zag), s_zag);
@@ -161,17 +162,70 @@ void image::quantization_opencl(opencl test, const int32* quant) {
 		
 		cl::NDRange global(m_x / 8, m_y / 8);
 		//calculate group size
-		cl::NDRange local(64,64);//todo local not used atm
+		cl::NDRange local(8,8);//todo local not used atm
 		test.queue.enqueueNDRangeKernel(subsample_kernel, 0, global);
 		
 		//read buffers back
 		test.queue.enqueueReadBuffer(luma_buf, CL_TRUE, 0, m_x * m_y * sizeof(signed short), m_dctqs);
-		
-		
 	}
 	catch (cl::Error error) {
 		std::cout << error.what() << "(" << error.err() << ")" << std::endl;
 	}
+}
+
+void image::distortion_opencl(opencl test, int32 quant)
+{
+	unsigned int ELEMENTS = m_x * m_y;
+	try {
+
+		cl::Buffer luma(test.context, CL_MEM_READ_WRITE, ELEMENTS * sizeof(float));
+		cl::Buffer quant_buf(test.context, CL_MEM_READ_ONLY, sizeof(int));
+		
+		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, ELEMENTS * sizeof(float), m_pixels);
+		test.queue.enqueueWriteBuffer(quant_buf, CL_TRUE, 0, sizeof(int), &quant);
+
+		std::ifstream file("distortion.cl");
+		if (!file)
+			printf("error opening kernel file");
+		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
+
+		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
+		cl::Program program(test.context, source);
+
+		// Build program for devices
+		program.build(test.devices);
+
+		// Create the kernel
+		cl::Kernel vecadd_kernel(program, "distortion");
+		
+		// Set kernel arguments
+		vecadd_kernel.setArg(0, luma);
+		vecadd_kernel.setArg(1, quant);
+		
+		// Execute kernel
+		cl::NDRange global(ELEMENTS);
+		//find greatest divisor
+		int sqrt_val = sqrt(ELEMENTS);
+		int group_size = ELEMENTS;
+		int max_group_size = test.devices[0].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
+		for (int i = 1; i < max_group_size; ++i)
+			if (ELEMENTS % i == 0)
+				group_size = i;
+
+		cl::NDRange local(group_size);
+		
+		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
+
+		// Copy result back.
+		test.queue.enqueueReadBuffer(luma, CL_TRUE, 0, ELEMENTS * sizeof(float), m_pixels);
+		
+		
+	}
+	catch (cl::Error error)
+	{
+		std::cout << error.what() << "(" << error.err() << ")" << std::endl;
+	}
+	
 }
 
 
@@ -423,50 +477,8 @@ void huffman_table::optimize(int table_len)
         m_val[num_used_syms - 1 - i] = static_cast<uint8>(pSyms[i].m_sym_index - 1);
     }
 }
-//Temporary to help with writing opencl function
-//load 8x8 pixel into the sample array, 
-/*for (int y = 0; y < m_image[c].m_y; y+= 8) {
-		for (int x = 0; x < m_image[c].m_x; x += 8) {
-			dct_t sample[64];
-			m_image[c].load_block(sample, x, y);
-			quantize_pixels(sample, m_image[c].get_dctq(x, y), m_huff[c > 0].m_quantization_table);
-		}
-	}*/
 
-void jpeg_encoder::quantization_luma_opencl(opencl test) {
-	try {
-		cl::Buffer luma(test.context, CL_MEM_READ_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
-		cl::Buffer luma_buf(test.context, CL_MEM_WRITE_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
-		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
-		std::ifstream file("quantization.cl");
-		if (!file)
-			std::cout << "error reading kernel file" << std::endl;
-		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-		cl::Program program(test.context, source);
-		
-		// Build program for devices
-		program.build(test.devices);
 
-		// Create the kernel
-		cl::Kernel subsample_kernel(program, "dct_luma");
-
-		subsample_kernel.setArg(0, luma);
-		subsample_kernel.setArg(1, m_image[0].m_x);//not using
-		subsample_kernel.setArg(2, m_image[0].m_y);//not using
-		subsample_kernel.setArg(3, luma_buf);
-		//divide by 64 because creating grid 8x8 = 64
-		cl::NDRange global(m_image[0].m_x *  m_image[0].m_y / 64);
-		//calculate group size
-		cl::NDRange local(64);
-		test.queue.enqueueNDRangeKernel(subsample_kernel, 0, global, local);
-		//read buffers back
-		test.queue.enqueueReadBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(double), m_image[0].get_dctq(0, 0));
-	}
-	catch (cl::Error error) {
-		std::cout << error.what() << "(" << error.err() << ")" << std::endl;
-	}
-}
 void jpeg_encoder::subsample_opencl(int v_samp) {
 	if (v_samp == 2) {
 
@@ -992,7 +1004,7 @@ bool jpeg_encoder::compress_image()
 	for(int c = 0; c < m_num_components; c++)
 		m_image[c].quantization_opencl(test, m_huff[c > 0].m_quantization_table);
 		
-	
+	//huffman coding not sure if it is parallelizable with GPU. Many dependencies betweeen data that would run on different kernels, and use same data addresses
     for (int y = 0; y < m_y; y+= m_mcu_h) {
         code_mcu_row(y, false);
     }
@@ -1193,12 +1205,11 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 	subsample_opencl(m_comp[0].m_v_samp);
 	
 
-	//clamping_distortions_opencl();
 	
 	//branching. If using GPU all the branches will be executed. Attempting anyways
 	// overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
-    if (m_huff[0].m_quantization_table[0] > 2) {
+    /*if (m_huff[0].m_quantization_table[0] > 2) {
         for(int c=0; c < m_num_components; c++) {
             for(int y=0; y < m_image[c].m_y; y++) {
                 for(int x=0; x < m_image[c].m_x; x++) {
@@ -1212,8 +1223,12 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
                 }
             }
         }
-    }
+    }*/
 
+	for (int c = 0; c < m_num_components; c++)
+		m_image[c].distortion_opencl(test, m_huff[0].m_quantization_table[0]);
+
+	
     return true;
 }
 
@@ -1284,14 +1299,13 @@ bool compress_image_to_jpeg_file(const char *pFilename, int width, int height, i
 
 bool compress_image_to_stream(output_stream &dst_stream, int width, int height, int num_channels, const uint8 *pImage_data, const params &comp_params)
 {
-	
-	test.setOpenCL();
-	
-    jpge::jpeg_encoder encoder;
+	jpge::jpeg_encoder encoder;
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
 
+	auto start = std::chrono::system_clock::now();
+	test.setOpenCL();
     if (!encoder.read_image(pImage_data, width, height, num_channels)) {
         return false;
     }
@@ -1300,7 +1314,13 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
         return false;
     }
 
-    encoder.deinit();
+	auto end = std::chrono::system_clock::now();
+	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+	printf("Total time: %f\n", result_time);
+	std::ofstream times_f("times.csv", std::ios_base::app);
+	times_f << result_time << std::endl;
+	times_f.close();
+	encoder.deinit();
     return true;
 }
 

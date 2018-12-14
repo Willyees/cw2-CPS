@@ -133,6 +133,7 @@ public:
 
     void subsample(image &luma, int v_samp);
 	void quantization_opencl(opencl, const int32*);
+	void distortion_opencl(opencl, int32);
 	float* get_pixels() { return m_pixels; }
 	
 private:
@@ -176,11 +177,7 @@ public:
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
 	void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
 	void RGB_to_YCC_opencl(const uint8 * pSrc, int width, int height);
-	void clamping_distortions_opencl();
-	void quantization_luma_opencl(opencl);
-	void quantization_blue_opencl();
-	void quantization_red_opencl();
-
+	
 private:
     jpeg_encoder(const jpeg_encoder &);
     jpeg_encoder &operator =(const jpeg_encoder &);
