@@ -275,7 +275,7 @@ int main(int arg_c, char *ppArgs[])
 	file.clear();
 	file.close();
 	for (int i = 0; i < 10; ++i) {
-		auto start = std::chrono::system_clock::now();
+		
 		printf("jpge/jpgd example app\n");
 
 		// Parse command line.
@@ -410,11 +410,7 @@ int main(int arg_c, char *ppArgs[])
 				return EXIT_FAILURE;
 			}
 		}
-		auto end = std::chrono::system_clock::now();
-		auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
-		log_printf("Total time: %f\n", result_time);
-		std::ofstream times_f("times.csv", std::ios_base::app);
-		times_f << result_time << std::endl;
+		
 		const long comp_file_size = get_file_size(pDst_filename);
 		const uint total_pixels = width * height;
 		log_printf("Compressed file size: %u, bits/pixel: %3.3f\n", comp_file_size, (comp_file_size * 8.0f) / total_pixels);
@@ -449,7 +445,7 @@ int main(int arg_c, char *ppArgs[])
 			return EXIT_FAILURE;
 		}
 		log_printf("Success.\n");
-		times_f.close();
+		
 	}
 	
 	
