@@ -22,11 +22,13 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
-#include <omp.h>
+
 #include <thread>
 #include <fstream>
 #include <chrono>
 #include <iostream>
+#include <thread>
+#include <vector>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -854,8 +856,8 @@ bool jpeg_encoder::emit_end_markers()
 
 bool jpeg_encoder::compress_image()
 {
-	int threads = omp_get_num_threads();
-	int thread = omp_get_thread_num();
+	int threads = 1;
+	int thread = 0;
 	
 	//it can be parallelised: only work on its 8x8 grid, not referer to any other block
 	//creating block 8x8 and loading into the image[component] the quantized pixels using the quantized table stored in m_huff[0 or 1]
@@ -885,7 +887,7 @@ bool jpeg_encoder::compress_image()
 		for(int y = 0; y < m_y; y += m_mcu_h) {
 			code_mcu_row(y, false);
 		}
-//#pragma omp barrier
+
 
 	if (thread == 0) {
     compute_huffman_tables();
@@ -982,8 +984,8 @@ void jpeg_encoder::deinit()
 
 bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp)
 {
-	int thread = omp_get_thread_num();
-	int threads = omp_get_num_threads();
+	int thread = 0;
+	int threads = 1;
 	int work_height = height / threads;
 	int work_additional = 0;
 	if (thread == threads - 1)
@@ -1007,7 +1009,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 			}
 			
 		}
-#pragma omp barrier //have to wait for second thread to finish, otherwise its data won't be used
+
 	
 		for (int c = 0; c < m_num_components; c++) {
 			work_height = (m_image[c].m_y - height) / threads;
@@ -1023,14 +1025,14 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 		}
 	//reduces the m_x and m_y by 2 (create a 2x2 grid pixel into a single pixel storing the average croma colour), or only m_y / 2
 	//the pixel modified are not the ones pointed by x and y. If parallelised it will affect other threads
-//#pragma omp barrier
+
 		if(thread == 0)
 		if (m_comp[0].m_h_samp == 2) {
 			for (int c = 1; c < m_num_components; c++) {
 				m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
 			}
 		}
-#pragma omp barrier //have to wait for first thread to subsample because it will modify m_y of the image
+
 
 		// overflow white and black, making distortions overflow as well,
 		// so distortions (ringing) will be clamped by the decoder
@@ -1137,23 +1139,30 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
         return false;
     }
 	auto start = std::chrono::system_clock::now();
-	const size_t threads = 2;
+	const size_t thread_n = 1;
+	std::vector<std::thread> threads;
+	
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	
-#pragma omp parallel num_threads(threads)	
-{
-	//std::cout << omp_get_thread_num() << std::endl;
-	if (!encoder.read_image(pImage_data, width, height, num_channels)) {
-        //return false; have to suppress because thread cannot return value
-	}
-}
 
-#pragma omp parallel num_threads(threads) 
-{
-    if (!encoder.compress_image()) {
-        //return false;
-    }
-}
+	for (size_t i = 0; i < thread_n; i++)
+		threads.push_back(std::thread(&jpeg_encoder::read_image, &encoder, pImage_data, width, height, num_channels));
+		//if (!encoder.read_image()) {
+		//	//return false; have to suppress because thread cannot return value
+		//}
+	for (auto& t : threads)
+		t.join();
+
+	threads.clear();
+
+	for (size_t i = 0; i < thread_n; ++i)
+		threads.push_back(std::thread(&jpeg_encoder::compress_image, &encoder));
+	for (auto& t : threads)
+		t.join();
+    //if (!encoder.compress_image()) {
+    //    //return false;
+    //}
+
 
 	auto end = std::chrono::system_clock::now();
 	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
