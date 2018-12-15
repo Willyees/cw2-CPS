@@ -22,7 +22,7 @@ void opencl::setOpenCL() {
 	context = std::move(cl::Context(devices));
 
 	// Create a command queue for device 0
-	queue = std::move(cl::CommandQueue(context, devices[0]));
+	queue = std::move(cl::CommandQueue(context, devices[0], CL_QUEUE_PROFILING_ENABLE));//debug cl_queue_profiling
 }
 constexpr int ELEMENTS = 100;
 constexpr int DATA_SIZE = ELEMENTS * sizeof(int);
