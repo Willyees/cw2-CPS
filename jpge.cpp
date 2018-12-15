@@ -27,7 +27,7 @@
 #include <fstream>
 #include <chrono>
 #include <iostream>
-#include <thread>
+#include <future>
 #include <vector>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
@@ -1140,28 +1140,29 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     }
 	auto start = std::chrono::system_clock::now();
 	const size_t thread_n = 1;
-	std::vector<std::thread> threads;
-	
+	std::vector<std::future<bool>> threads;
+
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
-	
+
 
 	for (size_t i = 0; i < thread_n; i++)
-		threads.push_back(std::thread(&jpeg_encoder::read_image, &encoder, pImage_data, width, height, num_channels));
-		//if (!encoder.read_image()) {
-		//	//return false; have to suppress because thread cannot return value
-		//}
-	for (auto& t : threads)
-		t.join();
+		threads.push_back(std::async(&jpeg_encoder::read_image, &encoder, pImage_data, width, height, num_channels));
+
+	for (auto& f : threads)
+		if (!f.get()) {
+			return false;
+		}
+
 
 	threads.clear();
 
 	for (size_t i = 0; i < thread_n; ++i)
-		threads.push_back(std::thread(&jpeg_encoder::compress_image, &encoder));
-	for (auto& t : threads)
-		t.join();
-    //if (!encoder.compress_image()) {
-    //    //return false;
-    //}
+		threads.push_back(std::async(&jpeg_encoder::compress_image, &encoder));
+
+	for (auto& f : threads)
+		if (!f.get()) {
+			return false;
+		}
 
 
 	auto end = std::chrono::system_clock::now();
