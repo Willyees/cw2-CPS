@@ -26,6 +26,7 @@
 #include <thread>
 #include <fstream>
 #include <chrono>
+#include <iostream>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -1136,22 +1137,23 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
         return false;
     }
 	auto start = std::chrono::system_clock::now();
-	int threads = 2;
+	const size_t threads = 2;
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	
-#pragma omp parallel num_threads(8)	
-	{
-		
-		
-    if (!encoder.read_image(pImage_data, width, height, num_channels)) {
-        //return false; have to suppress becuase thread cannot return value
-		}
+#pragma omp parallel num_threads(threads)	
+{
+	//std::cout << omp_get_thread_num() << std::endl;
+	if (!encoder.read_image(pImage_data, width, height, num_channels)) {
+        //return false; have to suppress because thread cannot return value
 	}
+}
 
-#pragma omp parallel num_threads(8)
+#pragma omp parallel num_threads(threads) 
+{
     if (!encoder.compress_image()) {
         //return false;
     }
+}
 
 	auto end = std::chrono::system_clock::now();
 	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
