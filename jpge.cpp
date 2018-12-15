@@ -854,11 +854,8 @@ bool jpeg_encoder::emit_end_markers()
     return m_all_stream_writes_succeeded;
 }
 
-bool jpeg_encoder::compress_image()
+bool jpeg_encoder::compress_image(const size_t thread)
 {
-	int threads = 1;
-	int thread = 0;
-	
 	//it can be parallelised: only work on its 8x8 grid, not referer to any other block
 	//creating block 8x8 and loading into the image[component] the quantized pixels using the quantized table stored in m_huff[0 or 1]
 	//interally uses also zag array on the block pixels passed to quantized function.
@@ -971,6 +968,7 @@ bool jpeg_encoder::init(output_stream *pStream, int width, int height, const par
     }
     m_pStream = pStream;
     m_params = comp_params;
+	threads = 8;
     return jpg_open(width, height);
 }
 
@@ -982,10 +980,8 @@ void jpeg_encoder::deinit()
     clear();
 }
 
-bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp)
+bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp, const size_t thread)
 {
-	int thread = 0;
-	int threads = 1;
 	int work_height = height / threads;
 	int work_additional = 0;
 	if (thread == threads - 1)
@@ -1139,14 +1135,13 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
         return false;
     }
 	auto start = std::chrono::system_clock::now();
-	const size_t thread_n = 1;
 	std::vector<std::future<bool>> threads;
 
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 
 
-	for (size_t i = 0; i < thread_n; i++)
-		threads.push_back(std::async(&jpeg_encoder::read_image, &encoder, pImage_data, width, height, num_channels));
+	for (size_t i = 0; i < encoder.get_threads(); ++i)
+		threads.push_back(std::async(&jpeg_encoder::read_image, &encoder, pImage_data, width, height, num_channels, i));
 
 	for (auto& f : threads)
 		if (!f.get()) {
@@ -1156,8 +1151,8 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 
 	threads.clear();
 
-	for (size_t i = 0; i < thread_n; ++i)
-		threads.push_back(std::async(&jpeg_encoder::compress_image, &encoder));
+	for (size_t i = 0; i < encoder.get_threads(); ++i)
+		threads.push_back(std::async(&jpeg_encoder::compress_image, &encoder, i));
 
 	for (auto& f : threads)
 		if (!f.get()) {

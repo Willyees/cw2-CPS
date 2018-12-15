@@ -163,16 +163,16 @@ public:
     // width * src_channels bytes per scanline is expected (RGB or Y format).
     // channels - May be 1, or 3. 1 indicates grayscale, 3 indicates RGB source data.
     // Returns false on out of memory or if a stream write fails.
-    bool read_image(const uint8 *data, int width, int height, int bpp);
+    bool read_image(const uint8 *data, int width, int height, int bpp, const size_t id);
     bool process_scanline2(const uint8 *pScanline, int y);
 
     // You must call after all scanlines are processed to finish compression.
-    bool compress_image();
+    bool compress_image(const size_t);
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
     void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
-
+	size_t get_threads() { return this->threads; }
 private:
-    jpeg_encoder(const jpeg_encoder &);
+	jpeg_encoder(const jpeg_encoder &);
     jpeg_encoder &operator =(const jpeg_encoder &);
 
     output_stream *m_pStream;
@@ -191,6 +191,7 @@ private:
     int m_mcu_w, m_mcu_h;
     int m_x, m_y;
     image m_image[3];
+	size_t threads;
 
     void rewrite_luma(const uint8 *image_data, int width, int height, int bpp);
 
