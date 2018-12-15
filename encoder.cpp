@@ -36,7 +36,7 @@
 #else
 #define strcpy_s(d, c, s) strcpy(d, s)
 #endif
-//#define MAIN_LOOP
+#define MAIN_LOOP
 
 static int print_usage()
 {

@@ -177,7 +177,7 @@ public:
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
 	void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
 	void RGB_to_YCC_opencl(const uint8 * pSrc, int width, int height);
-	
+	void setOpenCL() { test.setOpenCL(); }
 private:
     jpeg_encoder(const jpeg_encoder &);
     jpeg_encoder &operator =(const jpeg_encoder &);
@@ -186,7 +186,7 @@ private:
     params m_params;
     uint8 m_num_components;
     component m_comp[3];
-
+	opencl test;
     struct huffman_dcac m_huff[2];
     enum { JPGE_OUT_BUF_SIZE = 2048 };
     uint8 m_out_buf[JPGE_OUT_BUF_SIZE];

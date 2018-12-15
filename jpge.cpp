@@ -37,7 +37,7 @@
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
 
-opencl test;
+
 
 namespace jpge
 {
@@ -141,18 +141,8 @@ void image::quantization_opencl(opencl test, const int32* quant) {
 		test.queue.enqueueWriteBuffer(s_zag_buf, CL_TRUE, 0, sizeof(s_zag), s_zag);
 		test.queue.enqueueWriteBuffer(quant_buf, CL_TRUE, 0, sizeof(quant[0]) * 64, quant);
 		
-		std::ifstream file("quantization.cl");
-		if (!file)
-			std::cout << "error reading kernel file" << std::endl;
-		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-		cl::Program program(test.context, source);
-		
-		// Build program for devices
-		program.build(test.devices);
-
 		// Create the kernel
-		cl::Kernel subsample_kernel(program, "dct_luma");
+		cl::Kernel subsample_kernel(test.program, "dct_luma");
 
 		subsample_kernel.setArg(0, luma);
 		subsample_kernel.setArg(1, luma_buf);
@@ -184,19 +174,8 @@ void image::distortion_opencl(opencl test, int32 quant)
 		test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, ELEMENTS * sizeof(float), m_pixels);
 		test.queue.enqueueWriteBuffer(quant_buf, CL_TRUE, 0, sizeof(int), &quant);
 
-		std::ifstream file("distortion.cl");
-		if (!file)
-			printf("error opening kernel file");
-		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-
-		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-		cl::Program program(test.context, source);
-
-		// Build program for devices
-		program.build(test.devices);
-
 		// Create the kernel
-		cl::Kernel vecadd_kernel(program, "distortion");
+		cl::Kernel vecadd_kernel(test.program, "distortion");
 		
 		// Set kernel arguments
 		vecadd_kernel.setArg(0, luma);
@@ -489,25 +468,16 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 			cl::Buffer red(test.context, CL_MEM_READ_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
 			cl::Buffer blue_buff(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float) / 4);
 			cl::Buffer red_buff(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float) / 4);
-			cl::Event event1;
-			test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels(), NULL, &event1);
+			//cl::Event event1;
+			test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
 			test.queue.enqueueWriteBuffer(blue, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float), m_image[1].get_pixels());
 			test.queue.enqueueWriteBuffer(red, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float), m_image[2].get_pixels());
 			
-			std::ifstream file("subsample.cl");
-			if (!file)
-				std::cout << "error reading kernel file" << std::endl;
-			std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-			cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-			cl::Program program(test.context, source);
-			auto start = std::chrono::system_clock::now();
-			// Build program for devices
-			program.build(test.devices);
-			auto end = std::chrono::system_clock::now();
-			auto result = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
-			std::cout << "time: " << result << std::endl;
+			
+			
+			
 			// Create the kernel
-			cl::Kernel subsample_kernel(program, "subsample2x2");
+			cl::Kernel subsample_kernel(test.program, "subsample2x2");
 			
 			subsample_kernel.setArg(0, luma);
 			subsample_kernel.setArg(1, blue);
@@ -528,12 +498,12 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 			test.queue.enqueueReadBuffer(red_buff, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float) / 4, m_image[2].get_pixels());
 			test.queue.finish();//wait all queued events to finish
 			
-			//DEBUG TIMES
-			cl_ulong time_start = event1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
-			cl_ulong time_end = event1.getProfilingInfo<CL_PROFILING_COMMAND_END>();
-			
-			double nanoSeconds = time_end - time_start;
-			printf("OpenCl Execution time is: %0.3f milliseconds \n", nanoSeconds / 1000000.0);
+			////DEBUG TIMES - if using enable profiling in the queue (opencl.h)
+			//cl_ulong time_start = event1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+			//cl_ulong time_end = event1.getProfilingInfo<CL_PROFILING_COMMAND_END>();
+			//
+			//double nanoSeconds = time_end - time_start;
+			//printf("OpenCl Execution time is: %0.3f milliseconds \n", nanoSeconds / 1000000.0);
 
 		}
 		catch (cl::Error error) {
@@ -545,8 +515,8 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 		m_image[2].m_y /= 2;
 	}
 	else {
-		/*add case v_samp != 2*/
-		std::cout << "TODO: add case v_samp != 2" << std::endl;
+		/*TODO: add case v_samp != 2*/
+		
 		m_image[0].m_x /= 2;
 		m_image[1].m_y /= 2;
 	}
@@ -1071,19 +1041,9 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 		cl::Buffer image2(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
 		test.queue.enqueueWriteBuffer(src, CL_TRUE, 0, DATA_SIZE, pSrc);
 
-		std::ifstream file("test1.cl");
-		if (!file)
-			printf("error opening kernel file");
-		std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
-
-		cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
-		cl::Program program(test.context, source);
-
-		// Build program for devices
-		program.build(test.devices);
-
+		
 		// Create the kernel
-		cl::Kernel vecadd_kernel(program, "image_test");
+		cl::Kernel vecadd_kernel(test.program, "image_test");
 		//difference between the original width and images storing YCC components width
 		int diff = m_image[0].m_x - width;
 		// Set kernel arguments
@@ -1105,7 +1065,7 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 				group_size = i;
 
 		cl::NDRange local(group_size);
-		cout << "greatest divisor: " << group_size << endl;
+		//cout << "greatest divisor: " << group_size << endl;
 		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
 
 		// Copy result back.
@@ -1186,14 +1146,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
         return false;
     }
 
-    /*for (int y = 0; y < height; y++) {
-        if (m_num_components == 1) {
-            load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
-        } else {
-            load_mcu_YCC(image_data + width * y * bpp, width, bpp, y);
-        }
-    }
-*/
+    
 	if (m_num_components == 1) {
 		//load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
 	}
@@ -1201,7 +1154,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 		load_mcu_YCC(image_data /*+ width * y * bpp*/, width, bpp, height);
 	}
 
-	//copy additional pixels into the m_y (it can be higher than original image)
+	//copy additional pixels into the m_y (it can be higher than original image)-sequential
 	for(int c=0; c < m_num_components; c++) {
         for (int y = height; y < m_image[c].m_y; y++) {
             for(int x=0; x < m_image[c].m_x; x++) {
@@ -1211,39 +1164,20 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
     }
 	
 	//only subsample m_image[1] and m_image[2] (CromaC..) normalizing around 0
-   /* if (m_comp[0].m_h_samp == 2) {
-        for(int c=1; c < m_num_components; c++) {
-            m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
-        }
-    }*/
-	auto start = std::chrono::system_clock::now();
+   
+	//auto start = std::chrono::system_clock::now();
 	subsample_opencl(m_comp[0].m_v_samp);
-	auto end = std::chrono::system_clock::now();
+	/*auto end = std::chrono::system_clock::now();
 	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
 	printf("Time subsample: %f\n", result_time);
 	std::ofstream times_f("timesubsample.csv", std::ios_base::app);
 	times_f << result_time << std::endl;
-	times_f.close();
+	times_f.close();*/
 	
 	//branching. If using GPU all the branches will be executed. Attempting anyways
 	// overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
-    /*if (m_huff[0].m_quantization_table[0] > 2) {
-        for(int c=0; c < m_num_components; c++) {
-            for(int y=0; y < m_image[c].m_y; y++) {
-                for(int x=0; x < m_image[c].m_x; x++) {
-                    float px = m_image[c].get_px(x,y);
-                    if (px <= -128.f) {
-                        px -= m_huff[0].m_quantization_table[0];
-                    } else if (px >= 128.f) {
-                        px += m_huff[0].m_quantization_table[0];
-                    }
-					m_image[c].set_px(px, x, y);
-                }
-            }
-        }
-    }*/
-
+    
 	for (int c = 0; c < m_num_components; c++)
 		m_image[c].distortion_opencl(test, m_huff[0].m_quantization_table[0]);
 
@@ -1324,7 +1258,9 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     }
 
 	auto start = std::chrono::system_clock::now();
-	test.setOpenCL();
+	
+	encoder.setOpenCL();
+	
     if (!encoder.read_image(pImage_data, width, height, num_channels)) {
         return false;
     }

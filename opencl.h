@@ -9,9 +9,11 @@ public:
 	std::vector<cl::Device> devices;
 	cl::Context context;
 	cl::CommandQueue queue;
-	
+	cl::Program program;
 	void setOpenCL();
-	void test();
+	
+	
+private:
+	void setProgram();
 };
 
-void test2();
