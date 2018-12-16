@@ -904,7 +904,7 @@ void jpeg_encoder::compress_image(std::vector<bool>& status)
 		//printf("%d\n", y);
         code_mcu_row(y, true);
     }
-	if(!emit_end_markers());
+	if(!emit_end_markers())
 		return;
 	}
 
@@ -1165,7 +1165,6 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 for (auto b : v_status) {
 	if (!b)
 		return false;
-	b = false;
 }
 
 	auto end = std::chrono::system_clock::now();
