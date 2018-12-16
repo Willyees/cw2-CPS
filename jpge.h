@@ -18,6 +18,10 @@
 
 #ifndef JPEG_ENCODER_H
 #define JPEG_ENCODER_H
+#include <string>
+#include <vector>
+
+extern std::string NAME;//used to get filename
 
 namespace jpge {
 typedef unsigned char  uint8;
@@ -163,11 +167,11 @@ public:
     // width * src_channels bytes per scanline is expected (RGB or Y format).
     // channels - May be 1, or 3. 1 indicates grayscale, 3 indicates RGB source data.
     // Returns false on out of memory or if a stream write fails.
-    bool read_image(const uint8 *data, int width, int height, int bpp);
+    void read_image(const uint8 *data, int width, int height, int bpp, std::vector<bool>& status);
     bool process_scanline2(const uint8 *pScanline, int y);
 
     // You must call after all scanlines are processed to finish compression.
-    bool compress_image();
+    void compress_image(std::vector<bool>& status);
     void load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y);
     void load_mcu_YCC(const uint8 *pSrc, int width, int bpp, int y);
 

@@ -27,6 +27,7 @@
 #include <fstream>
 #include <chrono>
 #include <iostream>
+#include <vector>
 
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
@@ -852,7 +853,7 @@ bool jpeg_encoder::emit_end_markers()
     return m_all_stream_writes_succeeded;
 }
 
-bool jpeg_encoder::compress_image()
+void jpeg_encoder::compress_image(std::vector<bool>& status)
 {
 	int threads = omp_get_num_threads();
 	int thread = omp_get_thread_num();
@@ -878,6 +879,8 @@ bool jpeg_encoder::compress_image()
 				}
 			}
 		}
+		//sync all threads, so 1 will not modify before others
+#pragma omp barrier
 	//here utilizing the huffman_dcac. It is a shared array an will result in race conditions if not locked 
 	//in code_block() it is referred the previous dc value stored in component. It can't be parallelised. 
 	if (thread == 0)
@@ -885,7 +888,7 @@ bool jpeg_encoder::compress_image()
 		for(int y = 0; y < m_y; y += m_mcu_h) {
 			code_mcu_row(y, false);
 		}
-//#pragma omp barrier
+
 
 	if (thread == 0) {
     compute_huffman_tables();
@@ -896,16 +899,16 @@ bool jpeg_encoder::compress_image()
 	//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y += m_mcu_h) {
     for(int y = 0; y < m_y; y += m_mcu_h) {
 		if (!m_all_stream_writes_succeeded) {
-            return false;
+             return;
         }
 		//printf("%d\n", y);
         code_mcu_row(y, true);
     }
-	
-    return emit_end_markers();
+	if(!emit_end_markers());
+		return;
 	}
-	return true;//second thread returning
-	
+
+	status.at(thread) = true;
 }
 
 void jpeg_encoder::load_mcu_Y(const uint8 *pSrc, int width, int bpp, int y)
@@ -980,7 +983,7 @@ void jpeg_encoder::deinit()
     clear();
 }
 
-bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp)
+void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, int bpp, std::vector<bool>& status)
 {
 	int thread = omp_get_thread_num();
 	int threads = omp_get_num_threads();
@@ -994,7 +997,7 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 	
 	//printf("threadID:%d threads:%d", thread, threads);
 	if (bpp != 1 && bpp != 3 && bpp != 4) {
-		return false;
+		return;
 	}
 	//if(thread == 0)
 		//for (int y = 0; y < height; y++) {
@@ -1059,8 +1062,8 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 				}
 			}
 		}
-
-	return true;
+		//replacing the return value since thread cannot return value
+		status.at(thread) = true;
 	
 }
 
@@ -1137,28 +1140,38 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
         return false;
     }
 	auto start = std::chrono::system_clock::now();
-	const size_t threads = 2;
+	const size_t threads = std::thread::hardware_concurrency();
+	std::vector<bool> v_status(threads, false);
 	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	
 #pragma omp parallel num_threads(threads)	
 {
 	//std::cout << omp_get_thread_num() << std::endl;
-	if (!encoder.read_image(pImage_data, width, height, num_channels)) {
-        //return false; have to suppress because thread cannot return value
-	}
+	encoder.read_image(pImage_data, width, height, num_channels, v_status);
 }
+	for(auto b : v_status) {
+		if(!b) 
+			return false; 
+		b = false;
+	}
+	
+
 
 #pragma omp parallel num_threads(threads) 
 {
-    if (!encoder.compress_image()) {
-        //return false;
-    }
+		encoder.compress_image(v_status);
+}
+
+for (auto b : v_status) {
+	if (!b)
+		return false;
+	b = false;
 }
 
 	auto end = std::chrono::system_clock::now();
 	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
 	printf("Total time: %f\n", result_time);
-	std::ofstream times_f("times.csv", std::ios_base::app);
+	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
 	times_f << result_time << std::endl;
 	times_f.close();
 
