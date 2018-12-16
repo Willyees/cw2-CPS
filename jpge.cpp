@@ -489,8 +489,8 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 			cl::Buffer red(test.context, CL_MEM_READ_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
 			cl::Buffer blue_buff(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float) / 4);
 			cl::Buffer red_buff(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float) / 4);
-			cl::Event event1;
-			test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels(), NULL, &event1);
+			//cl::Event event1;
+			test.queue.enqueueWriteBuffer(luma, CL_TRUE, 0, m_image[0].m_x * m_image[0].m_y * sizeof(float), m_image[0].get_pixels());
 			test.queue.enqueueWriteBuffer(blue, CL_TRUE, 0, m_image[1].m_x * m_image[1].m_y * sizeof(float), m_image[1].get_pixels());
 			test.queue.enqueueWriteBuffer(red, CL_TRUE, 0, m_image[2].m_x * m_image[2].m_y * sizeof(float), m_image[2].get_pixels());
 			
@@ -500,12 +500,10 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 			std::string code(std::istreambuf_iterator<char>(file), (std::istreambuf_iterator<char>()));
 			cl::Program::Sources source(1, std::make_pair(code.c_str(), code.length() + 1));
 			cl::Program program(test.context, source);
-			auto start = std::chrono::system_clock::now();
+			
 			// Build program for devices
 			program.build(test.devices);
-			auto end = std::chrono::system_clock::now();
-			auto result = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
-			std::cout << "time: " << result << std::endl;
+			
 			// Create the kernel
 			cl::Kernel subsample_kernel(program, "subsample2x2");
 			
@@ -529,11 +527,11 @@ void jpeg_encoder::subsample_opencl(int v_samp) {
 			test.queue.finish();//wait all queued events to finish
 			
 			//DEBUG TIMES
-			cl_ulong time_start = event1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
+			/*cl_ulong time_start = event1.getProfilingInfo<CL_PROFILING_COMMAND_START>();
 			cl_ulong time_end = event1.getProfilingInfo<CL_PROFILING_COMMAND_END>();
 			
 			double nanoSeconds = time_end - time_start;
-			printf("OpenCl Execution time is: %0.3f milliseconds \n", nanoSeconds / 1000000.0);
+			printf("OpenCl Execution time is: %0.3f milliseconds \n", nanoSeconds / 1000000.0);*/
 
 		}
 		catch (cl::Error error) {
@@ -1105,7 +1103,7 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 				group_size = i;
 
 		cl::NDRange local(group_size);
-		cout << "greatest divisor: " << group_size << endl;
+		
 		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
 
 		// Copy result back.
@@ -1216,14 +1214,9 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
             m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
         }
     }*/
-	auto start = std::chrono::system_clock::now();
+	
 	subsample_opencl(m_comp[0].m_v_samp);
-	auto end = std::chrono::system_clock::now();
-	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
-	printf("Time subsample: %f\n", result_time);
-	std::ofstream times_f("timesubsample.csv", std::ios_base::app);
-	times_f << result_time << std::endl;
-	times_f.close();
+	
 	
 	//branching. If using GPU all the branches will be executed. Attempting anyways
 	// overflow white and black, making distortions overflow as well,
