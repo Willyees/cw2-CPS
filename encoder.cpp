@@ -37,7 +37,7 @@
 #define strcpy_s(d, c, s) strcpy(d, s)
 #endif
 
-//#define MAIN_LOOP
+#define MAIN_LOOP
 
 static int print_usage()
 {
@@ -280,11 +280,11 @@ int main(int arg_c, char *ppArgs[])
 	NAME = std::string(s, first + 1, s.find_first_of('.') - first - 1);
 
 	//clean time file
-	std::ofstream file("times.csv", std::ios_base::out);
+	std::ofstream file("times/" + NAME + ".csv", std::ios_base::out);
 	file.clear();
 	file.close();
 #ifdef MAIN_LOOP
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 25; ++i) {
 #endif
 		
 		printf("jpge/jpgd example app\n");

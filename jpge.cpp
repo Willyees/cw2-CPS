@@ -891,23 +891,28 @@ void jpeg_encoder::compress_image(std::vector<bool>& status)
 
 
 	if (thread == 0) {
-    compute_huffman_tables();
-    reset_last_dc();
+		compute_huffman_tables();
+		reset_last_dc();
 
-    emit_start_markers();
+		emit_start_markers();
 	
-	//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y += m_mcu_h) {
-    for(int y = 0; y < m_y; y += m_mcu_h) {
-		if (!m_all_stream_writes_succeeded) {
-             return;
-        }
-		//printf("%d\n", y);
-        code_mcu_row(y, true);
-    }
-	if(!emit_end_markers())
-		return;
-	}
+		//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y += m_mcu_h) {
+		for(int y = 0; y < m_y; y += m_mcu_h) {
+			if (!m_all_stream_writes_succeeded) {
+				std::cout << "all writes succeeded false" << std::endl;
 
+				 return;
+			}
+			//printf("%d\n", y);
+			code_mcu_row(y, true);
+    }
+		if (!emit_end_markers()) {
+			std::cout << "emit false" << std::endl;
+			return;
+		}
+		
+	}
+#pragma omp critical
 	status.at(thread) = true;
 }
 
@@ -1063,6 +1068,7 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 			}
 		}
 		//replacing the return value since thread cannot return value
+#pragma omp critical
 		status.at(thread) = true;
 	
 }
@@ -1135,7 +1141,7 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 {
     jpge::jpeg_encoder encoder;
 	
-
+	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
@@ -1149,28 +1155,36 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 	//std::cout << omp_get_thread_num() << std::endl;
 	encoder.read_image(pImage_data, width, height, num_channels, v_status);
 }
-	for(auto b : v_status) {
-		if(!b) 
+for (int i = 0; i < threads; ++i) {
+		if (!v_status.at(i)) {
+			times_f << "failed read image," << i << std::endl;
+			std::cout << "failed read image" << i << std::endl;
 			return false; 
-		b = false;
+		}
+		v_status.at(i) = false;
 	}
 	
 
-
+	
 #pragma omp parallel num_threads(threads) 
 {
 		encoder.compress_image(v_status);
+
 }
 
-for (auto b : v_status) {
-	if (!b)
+for (int i = 0; i < 8; ++i) {
+	if (!v_status.at(i)) {
+		times_f << "failed compress image," << i << std::endl;
+		std::cout << "failed compress image " << i << std::endl;
 		return false;
-}
 
+	}
+		
+}
 	auto end = std::chrono::system_clock::now();
-	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>((end - start)).count());
 	printf("Total time: %f\n", result_time);
-	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
+	
 	times_f << result_time << std::endl;
 	times_f.close();
 
