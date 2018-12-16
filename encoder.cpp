@@ -258,7 +258,7 @@ static int exhausive_compression_test(const char *pSrc_filename, bool use_jpgd)
     }
 
     log_printf("Max error: %.0f Lowest PSNR: %.3f, BPQ: %.0f\n", max_err, lowest_psnr, bpq_sum/bpq_num);
-
+	
 failure:
     free(pImage_data);
     free(pBuf);
@@ -271,10 +271,10 @@ failure:
 int main(int arg_c, char *ppArgs[])
 {
 	//clean time file
-	std::ofstream file("times.csv", std::ios_base::out);
+	std::ofstream file("times/times.csv", std::ios_base::out);
 	file.clear();
 	file.close();
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 50; ++i) {
 		
 		printf("jpge/jpgd example app\n");
 
@@ -366,7 +366,7 @@ int main(int arg_c, char *ppArgs[])
 			log_printf("Failed loading file \"%s\"!\n", pSrc_filename);
 			return EXIT_FAILURE;
 		}
-
+		
 		log_printf("Source file: \"%s\", image resolution: %ix%i, actual comps: %i\n", pSrc_filename, width, height, actual_comps);
 
 		// Fill in the compression parameter structure.
@@ -402,6 +402,8 @@ int main(int arg_c, char *ppArgs[])
 				log_printf("Failed writing to output file!\n");
 				return EXIT_FAILURE;
 			}
+			//free resources
+			free(pBuf);
 		}
 		else {
 
@@ -445,6 +447,10 @@ int main(int arg_c, char *ppArgs[])
 			return EXIT_FAILURE;
 		}
 		log_printf("Success.\n");
+		
+		//free resources allocated
+		free(pImage_data);
+		free(pUncomp_image_data);
 		
 	}
 	
