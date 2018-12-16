@@ -1327,7 +1327,7 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     }
 
 	auto end = std::chrono::system_clock::now();
-	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>((end - start)).count());
 	printf("Total time: %f\n", result_time);
 	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
 	times_f << result_time << std::endl;

@@ -36,7 +36,7 @@
 #else
 #define strcpy_s(d, c, s) strcpy(d, s)
 #endif
-//#define MAIN_LOOP
+#define MAIN_LOOP
 
 static int print_usage()
 {
@@ -283,7 +283,7 @@ int main(int arg_c, char *ppArgs[])
 	file.clear();
 	file.close();
 #ifdef MAIN_LOOP
-	for (int i = 0; i < 25; ++i) {
+	for (int i = 0; i < 5; ++i) {
 #endif
 		
 		printf("jpge/jpgd example app\n");
