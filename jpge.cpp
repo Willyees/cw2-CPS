@@ -29,7 +29,7 @@
 #include <iostream>
 #include <future>
 #include <vector>
-
+#include <string>
 #define JPGE_MAX(a,b) (((a)>(b))?(a):(b))
 #define JPGE_MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -1130,8 +1130,7 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 {
     jpge::jpeg_encoder encoder;
 	
-
-    if (!encoder.init(&dst_stream, width, height, comp_params)) {
+	if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
 	auto start = std::chrono::system_clock::now();
@@ -1159,14 +1158,14 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 			return false;
 		}
 
-
+	
 	auto end = std::chrono::system_clock::now();
-	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
+	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>((end - start)).count());
 	printf("Total time: %f\n", result_time);
-	std::ofstream times_f("times.csv", std::ios_base::app);
+	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
 	times_f << result_time << std::endl;
 	times_f.close();
-
+	
     encoder.deinit(); 
     return true;
 }

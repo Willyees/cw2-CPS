@@ -269,15 +269,22 @@ failure:
     log_printf((status == EXIT_SUCCESS) ? "Success.\n" : "Exhaustive test failed!\n");
     return status;
 }
-
+std::string NAME;
 int main(int arg_c, char *ppArgs[])
 {
+	
+	//get file name
+	std::string s = ppArgs[1];
+	size_t first = s.find_first_of('/');
+	NAME = std::string(s, first + 1, s.find_first_of('.') - first - 1);
+	
 	//clean time file
-	std::ofstream file("times.csv", std::ios_base::out);
+	std::ofstream file("times/" + NAME + ".csv", std::ios_base::out);
 	file.clear();
 	file.close();
+
 #ifdef MAIN_LOOP
-	for (int i = 0; i < 10; ++i) {
+	for (int i = 0; i < 25; ++i) {
 #endif
 		
 		printf("jpge/jpgd example app\n");
@@ -450,6 +457,9 @@ int main(int arg_c, char *ppArgs[])
 		}
 		log_printf("Success.\n");
 		
+		free(pImage_data);
+		free(pUncomp_image_data);
+			
 #ifdef MAIN_LOOP
 	}
 #endif
