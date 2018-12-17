@@ -18,6 +18,9 @@
 
 #ifndef JPEG_ENCODER_H
 #define JPEG_ENCODER_H
+#include <string>
+extern std::string NAME;//used to get filename
+extern std::string QUAL;//used to get filename
 
 namespace jpge {
 typedef unsigned char  uint8;

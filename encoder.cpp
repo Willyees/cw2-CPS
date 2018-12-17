@@ -268,13 +268,21 @@ failure:
     return status;
 }
 
+std::string NAME;
+std::string QUAL;
 int main(int arg_c, char *ppArgs[])
 {
+
+	//get file name
+	std::string s = ppArgs[1];
+	size_t first = s.find_first_of('/');
+	NAME = std::string(s, first + 1, s.find_first_of('.') - first - 1);
+	QUAL = ppArgs[3];
 	//clean time file
-	std::ofstream file("times/times.csv", std::ios_base::out);
+	std::ofstream file("times/" + NAME + QUAL + ".csv", std::ios_base::out);
 	file.clear();
 	file.close();
-	for (int i = 0; i < 50; ++i) {
+	for (int i = 0; i < 10; ++i) {
 		
 		printf("jpge/jpgd example app\n");
 
