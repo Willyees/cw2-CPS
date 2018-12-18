@@ -1035,7 +1035,6 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 	try {
 
 		cl::Buffer src(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
-		//cl::Buffer buff_b(test.context, CL_MEM_READ_ONLY, DATA_SIZE);
 		cl::Buffer image0(test.context, CL_MEM_WRITE_ONLY, m_image[0].m_x * m_image[0].m_y * sizeof(float));
 		cl::Buffer image1(test.context, CL_MEM_WRITE_ONLY, m_image[1].m_x * m_image[1].m_y * sizeof(float));
 		cl::Buffer image2(test.context, CL_MEM_WRITE_ONLY, m_image[2].m_x * m_image[2].m_y * sizeof(float));
@@ -1065,7 +1064,7 @@ void jpeg_encoder::RGB_to_YCC_opencl(const uint8 *pSrc, int width, int height) {
 				group_size = i;
 
 		cl::NDRange local(group_size);
-		//cout << "greatest divisor: " << group_size << endl;
+		
 		test.queue.enqueueNDRangeKernel(vecadd_kernel, cl::NullRange, global, local);
 
 		// Copy result back.
@@ -1165,16 +1164,9 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 	
 	//only subsample m_image[1] and m_image[2] (CromaC..) normalizing around 0
    
-	//auto start = std::chrono::system_clock::now();
 	subsample_opencl(m_comp[0].m_v_samp);
-	/*auto end = std::chrono::system_clock::now();
-	auto result_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>((end - start)).count());
-	printf("Time subsample: %f\n", result_time);
-	std::ofstream times_f("timesubsample.csv", std::ios_base::app);
-	times_f << result_time << std::endl;
-	times_f.close();*/
-	
-	//branching. If using GPU all the branches will be executed. Attempting anyways
+		
+	//branching. If using GPU all the branches will be executed. Attempting anyways.
 	// overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
     
@@ -1258,7 +1250,7 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
     }
 
 	auto start = std::chrono::system_clock::now();
-	
+	//set up opencl environment, loading and compiling all kernels
 	encoder.setOpenCL();
 	
     if (!encoder.read_image(pImage_data, width, height, num_channels)) {

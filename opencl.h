@@ -5,15 +5,15 @@
 
 class opencl {
 public:
+	void setOpenCL();
 	std::vector<cl::Platform> platforms;
 	std::vector<cl::Device> devices;
 	cl::Context context;
 	cl::CommandQueue queue;
 	cl::Program program;
-	void setOpenCL();
-	
 	
 private:
+	
 	void setProgram();
 };
 
