@@ -1017,7 +1017,7 @@ bool jpeg_encoder::compress_image()
 	for(int c = 0; c < m_num_components; c++)
 		m_image[c].quantization_opencl(test, m_huff[c > 0].m_quantization_table);
 		
-	//huffman coding not sure if it is parallelizable with GPU. Many dependencies betweeen data that would run on different kernels, and use same data addresses
+	//huffman coding not parallelizable with GPU. Many dependencies betweeen data that would run on different kernels, and use same data addresses
     for (int y = 0; y < m_y; y+= m_mcu_h) {
         code_mcu_row(y, false);
     }
@@ -1184,16 +1184,8 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
         return false;
     }
 
-    /*for (int y = 0; y < height; y++) {
-        if (m_num_components == 1) {
-            load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
-        } else {
-            load_mcu_YCC(image_data + width * y * bpp, width, bpp, y);
-        }
-    }
-*/
-	if (m_num_components == 1) {
-		//load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
+    if (m_num_components == 1) {
+		//load_mcu_Y(image_data + width * y * bpp, width, bpp, y); todo: not passing any 'y', have to modify this func
 	}
 	else {
 		load_mcu_YCC(image_data /*+ width * y * bpp*/, width, bpp, height);
@@ -1208,40 +1200,16 @@ bool jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
         }
     }
 	
-	//only subsample m_image[1] and m_image[2] (CromaC..) normalizing around 0
-   /* if (m_comp[0].m_h_samp == 2) {
-        for(int c=1; c < m_num_components; c++) {
-            m_image[c].subsample(m_image[0], m_comp[0].m_v_samp);
-        }
-    }*/
-	
 	subsample_opencl(m_comp[0].m_v_samp);
 	
 	
-	//branching. If using GPU all the branches will be executed. Attempting anyways
+	//branching. If using GPU all the branches will be executed. Attempting anyways.
 	// overflow white and black, making distortions overflow as well,
     // so distortions (ringing) will be clamped by the decoder
-    /*if (m_huff[0].m_quantization_table[0] > 2) {
-        for(int c=0; c < m_num_components; c++) {
-            for(int y=0; y < m_image[c].m_y; y++) {
-                for(int x=0; x < m_image[c].m_x; x++) {
-                    float px = m_image[c].get_px(x,y);
-                    if (px <= -128.f) {
-                        px -= m_huff[0].m_quantization_table[0];
-                    } else if (px >= 128.f) {
-                        px += m_huff[0].m_quantization_table[0];
-                    }
-					m_image[c].set_px(px, x, y);
-                }
-            }
-        }
-    }*/
-
-	for (int c = 0; c < m_num_components; c++)
+    for (int c = 0; c < m_num_components; c++)
 		m_image[c].distortion_opencl(test, m_huff[0].m_quantization_table[0]);
 
-	
-    return true;
+	return true;
 }
 
 
