@@ -871,7 +871,6 @@ void jpeg_encoder::compress_image(std::vector<bool>& status)
 			
 			for (int y = work_height * thread; y < m_image[c].m_y / threads / 8 * 8 * (thread + 1) + work_additional; y += 8) {
 
-				//for(int y = 0; y < m_image[c].m_y; y += 8) {
 				for (int x = 0; x < m_image[c].m_x; x += 8) {
 					dct_t sample[64];
 					m_image[c].load_block(sample, x, y);
@@ -884,7 +883,6 @@ void jpeg_encoder::compress_image(std::vector<bool>& status)
 	//here utilizing the huffman_dcac. It is a shared array an will result in race conditions if not locked 
 	//in code_block() it is referred the previous dc value stored in component. It can't be parallelised. 
 	if (thread == 0)
-		//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y+= m_mcu_h) {
 		for(int y = 0; y < m_y; y += m_mcu_h) {
 			code_mcu_row(y, false);
 		}
@@ -896,14 +894,12 @@ void jpeg_encoder::compress_image(std::vector<bool>& status)
 
 		emit_start_markers();
 	
-		//for (int y = m_y / threads * thread; y < m_y / threads * (thread + 1); y += m_mcu_h) {
 		for(int y = 0; y < m_y; y += m_mcu_h) {
 			if (!m_all_stream_writes_succeeded) {
 				std::cout << "all writes succeeded false" << std::endl;
 
 				 return;
 			}
-			//printf("%d\n", y);
 			code_mcu_row(y, true);
     }
 		if (!emit_end_markers()) {
@@ -992,20 +988,21 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 {
 	int thread = omp_get_thread_num();
 	int threads = omp_get_num_threads();
+	//calculating workload per thread
+	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
 	int work_height = height / threads;
+	//additional work in case image is not even
 	int work_additional = 0;
+	//given to last thread
 	if (thread == threads - 1)
-		if (work_height * threads != height){
-			//work_height += height - (work_height * threads);
+		if (work_height * threads != height) {
 			work_additional = height - (work_height * threads);
 		}
 	
-	//printf("threadID:%d threads:%d", thread, threads);
 	if (bpp != 1 && bpp != 3 && bpp != 4) {
 		return;
 	}
-	//if(thread == 0)
-		//for (int y = 0; y < height; y++) {
+	
 		for (int y = work_height * thread; y < work_height * (thread + 1) + work_additional; y++) {
 			if (m_num_components == 1) {
 				load_mcu_Y(image_data + width * y * bpp, width, bpp, y);
@@ -1022,8 +1019,8 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 			work_additional = 0;
 			if (thread == threads - 1)
 				work_additional = m_image[c].m_y - (height + work_height * threads);
-			//printf("additional:%d height:%d", work_additional, work_height);
-			for (int y = height; y < height + work_height * (thread + 1) + work_additional; y++) {//adding some lines at the end of the image
+			//adding some lines at the end of the image
+			for (int y = height; y < height + work_height * (thread + 1) + work_additional; y++) {
 				for (int x = 0; x < m_image[c].m_x; x++) {
 					m_image[c].set_px(m_image[c].get_px(x, y - 1), x, y);
 				}
@@ -1031,7 +1028,7 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 		}
 	//reduces the m_x and m_y by 2 (create a 2x2 grid pixel into a single pixel storing the average croma colour), or only m_y / 2
 	//the pixel modified are not the ones pointed by x and y. If parallelised it will affect other threads
-//#pragma omp barrier
+
 		if(thread == 0)
 		if (m_comp[0].m_h_samp == 2) {
 			for (int c = 1; c < m_num_components; c++) {
@@ -1048,11 +1045,10 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 				work_additional = 0;
 				if (thread == threads - 1)
 					if (work_height * threads != m_image[c].m_y) {
-						//work_height += height - (work_height * threads);
 						work_additional = m_image[c].m_y - (work_height * threads);
 					}
 				
-				//for (int y = 0; y < m_image[c].m_y; y++) {
+				
 				for (int y = work_height * thread; y < work_height * (thread + 1) + work_additional; y++) {
 					for (int x = 0; x < m_image[c].m_x; x++) {
 						float px = m_image[c].get_px(x, y);
@@ -1067,7 +1063,7 @@ void jpeg_encoder::read_image(const uint8 *image_data, int width, int height, in
 				}
 			}
 		}
-		//replacing the return value since thread cannot return value
+		//replacing the return value since thread cannot return value, have to make sure only 1 at a time can modify
 #pragma omp critical
 		status.at(thread) = true;
 	
@@ -1141,18 +1137,18 @@ bool compress_image_to_stream(output_stream &dst_stream, int width, int height, 
 {
     jpge::jpeg_encoder encoder;
 	
-	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
+	
     if (!encoder.init(&dst_stream, width, height, comp_params)) {
         return false;
     }
 	auto start = std::chrono::system_clock::now();
+	std::ofstream times_f("times/" + NAME + ".csv", std::ios_base::app);
 	const size_t threads = std::thread::hardware_concurrency();
 	std::vector<bool> v_status(threads, false);
-	//if the height is odd, it will be lost a line doing the integer division (it is not outputting a float)
+	
 	
 #pragma omp parallel num_threads(threads)	
 {
-	//std::cout << omp_get_thread_num() << std::endl;
 	encoder.read_image(pImage_data, width, height, num_channels, v_status);
 }
 for (int i = 0; i < threads; ++i) {
@@ -1163,8 +1159,6 @@ for (int i = 0; i < threads; ++i) {
 		}
 		v_status.at(i) = false;
 	}
-	
-
 	
 #pragma omp parallel num_threads(threads) 
 {
