@@ -1,3 +1,21 @@
+# Coursework 2 Concurrent and Parallel Systems - Napier University 2018/2019
+
+## Aim
+Implement a JPEG compression algorithm by applying parallelisation techniques where possible, evaluating their effectiveness
+
+
+## Implementation 
+The project utilizes an inital JPEG compression program available on GitHub (Kornel) which is based on the code by Rich Geldreich (Geldreich), with some extra enhancements. The initial program provides multiple steps in which parallelization has not been
+attempted: read image from memory, decompress, check the compression success.
+It has been carried out a Profiler to analyze possible areas of high CPU useage where it could have been attempted parallelisation.
+![profiler](https://github.com/Willyees/cw2-CPS/blob/assets/assets/inti_high_main_f.png)
+
+## Methodology
+Initially OpenMP was attempted to ascertain if a speed up would be possibly achieved. 
+Later, other techniques as futures and OpenCl were utilized.
+
+
+
 # Research JPEG encoder
 
 Codename "Nether Poppleton"
