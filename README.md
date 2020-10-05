@@ -21,7 +21,7 @@ A comparison has been carried out of times taken to compress different types of 
 
 Additionally, they have been compared by their calculated speed up and quality percentage compression applied.
 
-A more in depth discussion can be found in the [report](../report_cw2.pdf).
+A more in depth discussion can be found in the [report](./report_cw2.pdf).
 
 ## Conclusions
 In general JPEG compression can achieve improvement utilizing parallelization, so if the main
